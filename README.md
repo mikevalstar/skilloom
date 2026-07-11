@@ -10,7 +10,7 @@ A TUI-first manager for AI agent skills.
 - **Curated & selective** — syncing is opt-in per skill per destination: a project-specific skill needn't flow up, a repo skill needn't land in every project.
 - **TUI-first, headless underneath** — an interactive terminal UI does the mutating; `skilloom … --json` gives scripts (and [myplace](https://github.com/mikevalstar/myplace)) a read-only status view. *(Diff-while-syncing, tags, search, and filtering come later.)*
 
-> 🚧 **Scaffold.** Nothing is built yet. This repo currently holds the documentation-first design (see [docs/](docs/README.md)) and a minimal Rust skeleton. The engine, the TUI, and the `--json` surface come next, in the planning and implementation phases. skilloom was spun out of myplace ([its ADR-0024](https://github.com/mikevalstar/myplace/blob/main/docs/adrs/0024-skills-management-as-separate-project.md)); the design intent is re-homed in [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md).
+> 🚧 **Early.** First slice runs: the first-run setup screen (point at your loom-skills repo, with directory autocomplete) and the tabbed app shell — Dashboard / Projects / Global / Catalog + a settings gear — each tab a placeholder for now, navigable by keyboard and mouse. The sync engine and `--json` surface come next. Design lives in [docs/](docs/README.md); skilloom was spun out of myplace ([its ADR-0024](https://github.com/mikevalstar/myplace/blob/main/docs/adrs/0024-skills-management-as-separate-project.md)), with the intent re-homed in [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md).
 
 ## Two repos
 
@@ -21,14 +21,14 @@ skilloom is the **tool**; your skills live in a **separate repo**, the same way 
 | [`skilloom`](https://github.com/mikevalstar/skilloom) (this repo, public) | The Rust TUI + engine that fetches, links, vendors, and reconciles skills |
 | [`loom-skills`](https://github.com/mikevalstar/loom-skills) (private) | The source-of-truth git repo for your personal skills. skilloom manages its structure |
 
-## Build from source
+## Build & run
 
 ```sh
-cargo build            # once dependencies land, produces target/debug/skilloom
-cargo run              # currently prints a scaffold notice
+cargo run     # launches the TUI — first run asks for your loom-skills repo path
+cargo test    # unit tests + ratatui render tests
 ```
 
-Rust toolchain is pinned to stable via `rust-toolchain.toml`.
+First run writes `~/.config/skilloom/config.toml` with the repo location. Rust toolchain is pinned to stable via `rust-toolchain.toml`.
 
 ## Roadmap
 

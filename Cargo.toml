@@ -12,7 +12,13 @@ publish = false
 name = "skilloom"
 path = "src/main.rs"
 
-# No dependencies yet. The core stack (ratatui, crossterm, tokio, serde, clap)
-# is decided in docs/adrs/0002-rust-and-ratatui-for-the-tui.md and added — with
-# pinned versions — during the implementation phase. See docs/README.md.
+# Core stack per docs/adrs/0002-rust-and-ratatui-for-the-tui.md. tokio/clap
+# join later, when network/git and the CLI (`--json`) surface arrive.
 [dependencies]
+anyhow = "1.0.103"
+ratatui = "0.30.2"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "1.1.2"
+
+[dev-dependencies]
+tempfile = "3.27.0"
