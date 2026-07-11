@@ -1,12 +1,13 @@
 //! Discovering installed skills on disk — by folder name, for now.
 //!
-//! Two sources: the global agent dirs under `$HOME` (where Claude Code, the
-//! tool-agnostic `~/.agents` store, Codex, and Cursor look), and the loom-skills
-//! repo (`personal/` + `vendor/`). A "skill" is just a subdirectory here; reading
+//! Two sources: the global agent dirs under `$HOME` (Claude Code, the
+//! tool-agnostic `~/.agents` store, Codex, Cursor) and the loom-skills repo
+//! (`personal/` + `vendor/`). Global skills are kept **grouped by location** so
+//! the UI can show a left nav; [`nav_rows`] flattens those groups into
+//! renderable/selectable rows. A "skill" is just a subdirectory here; reading
 //! `SKILL.md` and richer metadata comes later.
 
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::paths;
 
@@ -20,21 +21,19 @@ pub const GLOBAL_SKILL_DIRS: &[&str] = &[
     ".cursor/skills",
 ];
 
-/// A skill installed globally, deduped by folder name across agent dirs.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GlobalSkill {
-    pub name: String,
-    /// Short labels of the agent dirs it appears in, e.g. `["claude", "agents"]`.
-    pub locations: Vec<String>,
+/// Skills found in one location (a single agent dir).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SkillGroup {
+    /// Display label, e.g. `"~/.claude/skills"`.
+    pub label: String,
+    /// Skill folder names in this location, sorted.
+    pub skills: Vec<String>,
 }
 
-/// Result of scanning the global agent dirs.
+/// Skills across the global agent dirs, grouped by location (existing dirs only).
 #[derive(Debug, Default, Clone)]
 pub struct GlobalScan {
-    /// Agent skill dirs that exist and were scanned (absolute).
-    pub scanned_dirs: Vec<PathBuf>,
-    /// Skills found, sorted by name.
-    pub skills: Vec<GlobalSkill>,
+    pub groups: Vec<SkillGroup>,
 }
 
 /// Skills present in the loom-skills repo.
@@ -42,6 +41,19 @@ pub struct GlobalScan {
 pub struct RepoScan {
     pub personal: Vec<String>,
     pub vendor: Vec<String>,
+}
+
+/// A row in the grouped left-nav: a location header, an empty-group marker, or a
+/// selectable skill carrying its flat selection index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NavRow {
+    Header(String),
+    Empty,
+    Skill {
+        index: usize,
+        name: String,
+        location: String,
+    },
 }
 
 /// Immediate subdirectory names of `dir`, sorted, hidden dirs skipped.
@@ -61,48 +73,22 @@ pub fn subdirs(dir: &Path) -> Vec<String> {
     names
 }
 
-/// `".claude/skills"` → `"claude"`.
-fn short_label(rel: &str) -> String {
-    rel.split('/')
-        .next()
-        .unwrap_or(rel)
-        .trim_start_matches('.')
-        .to_string()
-}
-
-/// Scan the known global agent skill dirs under `$HOME`.
+/// Scan the known global agent skill dirs under `$HOME`, grouped by location.
 pub fn scan_global() -> GlobalScan {
     let Some(home) = paths::home_dir() else {
         return GlobalScan::default();
     };
-    let resolved: Vec<(String, PathBuf)> = GLOBAL_SKILL_DIRS
-        .iter()
-        .map(|rel| (short_label(rel), home.join(rel)))
-        .collect();
-    aggregate_global(&resolved)
-}
-
-/// Core aggregation, split out so it's testable with arbitrary dirs.
-fn aggregate_global(dirs: &[(String, PathBuf)]) -> GlobalScan {
-    let mut scanned_dirs = Vec::new();
-    let mut by_name: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (label, dir) in dirs {
-        if !dir.is_dir() {
-            continue;
-        }
-        scanned_dirs.push(dir.clone());
-        for name in subdirs(dir) {
-            by_name.entry(name).or_default().push(label.clone());
+    let mut groups = Vec::new();
+    for &rel in GLOBAL_SKILL_DIRS {
+        let dir = home.join(rel);
+        if dir.is_dir() {
+            groups.push(SkillGroup {
+                label: format!("~/{rel}"),
+                skills: subdirs(&dir),
+            });
         }
     }
-    let skills = by_name
-        .into_iter()
-        .map(|(name, locations)| GlobalSkill { name, locations })
-        .collect();
-    GlobalScan {
-        scanned_dirs,
-        skills,
-    }
+    GlobalScan { groups }
 }
 
 /// Scan `<repo>/personal` and `<repo>/vendor` for skill folders.
@@ -112,6 +98,46 @@ pub fn scan_repo(repo_path: &str) -> RepoScan {
         personal: subdirs(&base.join("personal")),
         vendor: subdirs(&base.join("vendor")),
     }
+}
+
+/// Flatten groups into left-nav rows, numbering selectable skills in order.
+pub fn nav_rows(scan: &GlobalScan) -> Vec<NavRow> {
+    let mut rows = Vec::new();
+    let mut index = 0;
+    for group in &scan.groups {
+        rows.push(NavRow::Header(group.label.clone()));
+        if group.skills.is_empty() {
+            rows.push(NavRow::Empty);
+        } else {
+            for name in &group.skills {
+                rows.push(NavRow::Skill {
+                    index,
+                    name: name.clone(),
+                    location: group.label.clone(),
+                });
+                index += 1;
+            }
+        }
+    }
+    rows
+}
+
+/// Number of selectable skills across the nav rows.
+pub fn skill_count(rows: &[NavRow]) -> usize {
+    rows.iter()
+        .filter(|r| matches!(r, NavRow::Skill { .. }))
+        .count()
+}
+
+/// The nav row for the skill at flat selection `index`, if any.
+pub fn skill_at(rows: &[NavRow], index: usize) -> Option<&NavRow> {
+    rows.iter()
+        .find(|r| matches!(r, NavRow::Skill { index: i, .. } if *i == index))
+}
+
+/// Whether a skill (by folder name) is tracked in the loom-skills repo.
+pub fn is_in_repo(repo: &RepoScan, name: &str) -> bool {
+    repo.personal.iter().any(|n| n == name) || repo.vendor.iter().any(|n| n == name)
 }
 
 #[cfg(test)]
@@ -130,25 +156,44 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_dedupes_by_name_across_dirs() {
-        let tmp = tempfile::tempdir().unwrap();
-        let claude = tmp.path().join("claude");
-        let agents = tmp.path().join("agents");
-        fs::create_dir_all(claude.join("herdr")).unwrap();
-        fs::create_dir_all(claude.join("okq")).unwrap();
-        fs::create_dir_all(agents.join("herdr")).unwrap();
-        let dirs = vec![
-            ("claude".to_string(), claude),
-            ("agents".to_string(), agents),
-            ("missing".to_string(), tmp.path().join("nope")),
-        ];
-        let scan = aggregate_global(&dirs);
+    fn nav_rows_number_skills_and_mark_empty_groups() {
+        let scan = GlobalScan {
+            groups: vec![
+                SkillGroup {
+                    label: "A".to_string(),
+                    skills: vec!["x".to_string(), "y".to_string()],
+                },
+                SkillGroup {
+                    label: "B".to_string(),
+                    skills: vec![],
+                },
+                SkillGroup {
+                    label: "C".to_string(),
+                    skills: vec!["z".to_string()],
+                },
+            ],
+        };
+        let rows = nav_rows(&scan);
+        assert_eq!(skill_count(&rows), 3);
+        // Header(A), Skill0(x), Skill1(y), Header(B), Empty, Header(C), Skill2(z)
+        assert!(matches!(&rows[0], NavRow::Header(l) if l == "A"));
+        assert!(matches!(&rows[1], NavRow::Skill { index: 0, .. }));
+        assert!(matches!(&rows[4], NavRow::Empty));
+        let last = skill_at(&rows, 2).unwrap();
+        assert!(
+            matches!(last, NavRow::Skill { name, location, .. } if name == "z" && location == "C")
+        );
+    }
 
-        assert_eq!(scan.scanned_dirs.len(), 2);
-        let herdr = scan.skills.iter().find(|s| s.name == "herdr").unwrap();
-        assert_eq!(herdr.locations, vec!["claude", "agents"]);
-        let okq = scan.skills.iter().find(|s| s.name == "okq").unwrap();
-        assert_eq!(okq.locations, vec!["claude"]);
+    #[test]
+    fn is_in_repo_checks_personal_and_vendor() {
+        let repo = RepoScan {
+            personal: vec!["mine".to_string()],
+            vendor: vec!["pdf".to_string()],
+        };
+        assert!(is_in_repo(&repo, "mine"));
+        assert!(is_in_repo(&repo, "pdf"));
+        assert!(!is_in_repo(&repo, "nope"));
     }
 
     #[test]

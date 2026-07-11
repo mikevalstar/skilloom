@@ -157,6 +157,10 @@ pub struct App {
     pub save_requested: bool,
     /// Skills found in the global agent dirs (`~/.claude/skills`, …).
     pub global: skills::GlobalScan,
+    /// Global left-nav rows (location headers + selectable skills).
+    pub global_rows: Vec<skills::NavRow>,
+    /// Selected skill index within the Global left-nav.
+    pub global_sel: usize,
     /// Skills found in the loom-skills repo (`personal/`, `vendor/`).
     pub repo: skills::RepoScan,
 }
@@ -174,6 +178,8 @@ impl App {
             should_quit: false,
             save_requested: false,
             global: skills::GlobalScan::default(),
+            global_rows: Vec::new(),
+            global_sel: 0,
             repo: skills::RepoScan::default(),
         };
         if app.config.is_configured() {
@@ -185,12 +191,17 @@ impl App {
     /// Re-read installed skills from disk: the global agent dirs and the repo.
     pub fn rescan(&mut self) {
         self.global = skills::scan_global();
+        self.global_rows = skills::nav_rows(&self.global);
         self.repo = self
             .config
             .repo_path
             .as_deref()
             .map(skills::scan_repo)
             .unwrap_or_default();
+        let count = skills::skill_count(&self.global_rows);
+        if self.global_sel >= count {
+            self.global_sel = count.saturating_sub(1);
+        }
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
@@ -251,6 +262,8 @@ impl App {
                 }
             }
             KeyCode::Char('f') => self.rescan(),
+            KeyCode::Up | KeyCode::Char('k') => self.global_select_prev(),
+            KeyCode::Down | KeyCode::Char('j') => self.global_select_next(),
             KeyCode::Char(c @ '1'..='4') => {
                 if let Some(m) = self.main_mut() {
                     m.select((c as u8 - b'1') as usize);
@@ -288,6 +301,35 @@ impl App {
                 return;
             }
         }
+
+        // Clicking a skill row in the Global left nav selects it.
+        if self.on_global_tab() {
+            let (nav, _detail) = ui::global_layout(regions.content);
+            if let Some(index) = nav_row_hit(&self.global_rows, nav, col, row) {
+                self.global_sel = index;
+            }
+        }
+    }
+
+    fn on_global_tab(&self) -> bool {
+        matches!(&self.screen, Screen::Main(m) if m.active == Tab::Global && !m.settings_open)
+    }
+
+    fn global_select_next(&mut self) {
+        if !self.on_global_tab() {
+            return;
+        }
+        let count = skills::skill_count(&self.global_rows);
+        if count > 0 && self.global_sel + 1 < count {
+            self.global_sel += 1;
+        }
+    }
+
+    fn global_select_prev(&mut self) {
+        if !self.on_global_tab() {
+            return;
+        }
+        self.global_sel = self.global_sel.saturating_sub(1);
     }
 
     /// Validate the setup input and, if good, save it and enter the main app.
@@ -340,6 +382,27 @@ fn default_setup_input() -> String {
 
 fn contains(rect: Rect, col: u16, row: u16) -> bool {
     col >= rect.x && col < rect.x + rect.width && row >= rect.y && row < rect.y + rect.height
+}
+
+/// Which skill (flat index) a click at `(col, row)` lands on inside the Global
+/// left-nav rect, accounting for the border. `None` if it's a header/empty/gap.
+fn nav_row_hit(rows: &[skills::NavRow], nav: Rect, col: u16, row: u16) -> Option<usize> {
+    if nav.width < 2 || nav.height < 2 {
+        return None;
+    }
+    let inner_x = nav.x + 1;
+    let inner_y = nav.y + 1;
+    if col < inner_x || col >= inner_x + (nav.width - 2) {
+        return None;
+    }
+    if row < inner_y || row >= inner_y + (nav.height - 2) {
+        return None;
+    }
+    let visual = (row - inner_y) as usize;
+    match rows.get(visual) {
+        Some(skills::NavRow::Skill { index, .. }) => Some(*index),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -426,6 +489,33 @@ mod tests {
             app.config.repo_path.as_deref(),
             Some(tmp.path().to_string_lossy().as_ref())
         );
+    }
+
+    #[test]
+    fn global_selection_moves_only_on_global_tab() {
+        let mut app = main_app();
+        app.global = skills::GlobalScan {
+            groups: vec![skills::SkillGroup {
+                label: "L".to_string(),
+                skills: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            }],
+        };
+        app.global_rows = skills::nav_rows(&app.global);
+        app.global_sel = 0;
+
+        // On Dashboard, arrow keys are a no-op for the Global selection.
+        app.on_key(key(KeyCode::Down));
+        assert_eq!(app.global_sel, 0);
+
+        app.on_key(key(KeyCode::Char('3'))); // switch to Global
+        app.on_key(key(KeyCode::Down));
+        assert_eq!(app.global_sel, 1);
+        app.on_key(key(KeyCode::Char('j')));
+        assert_eq!(app.global_sel, 2);
+        app.on_key(key(KeyCode::Down)); // clamps at the end
+        assert_eq!(app.global_sel, 2);
+        app.on_key(key(KeyCode::Up));
+        assert_eq!(app.global_sel, 1);
     }
 
     #[test]

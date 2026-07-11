@@ -11,7 +11,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::{App, MainState, Screen, SetupState, Tab};
 use crate::config::Config;
-use crate::skills::{GlobalScan, RepoScan};
+use crate::skills::{self, NavRow, RepoScan};
 
 const PREFIX: &str = " skilloom  ";
 const GEAR: &str = "⚙";
@@ -118,7 +118,7 @@ fn render_content(frame: &mut Frame, area: Rect, app: &App, main: &MainState) {
         return;
     }
     match main.active {
-        Tab::Global => render_global(frame, area, &app.global),
+        Tab::Global => render_global(frame, area, &app.global_rows, app.global_sel, &app.repo),
         Tab::Catalog => render_catalog(frame, area, &app.config, &app.repo),
         other => render_placeholder(frame, area, other),
     }
@@ -158,48 +158,105 @@ fn render_placeholder(frame: &mut Frame, area: Rect, tab: Tab) {
     frame.render_widget(Paragraph::new(body).block(block), area);
 }
 
-fn render_global(frame: &mut Frame, area: Rect, scan: &GlobalScan) {
-    let mut lines: Vec<Line<'static>> = vec![
-        Line::from(Span::styled(
-            "Installed globally",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-    ];
-    if scan.skills.is_empty() {
+/// Split the Global content area into (left nav, detail). Shared with mouse
+/// hit-testing in `app` so clickable rows match what's drawn.
+pub fn global_layout(content: Rect) -> (Rect, Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(32), Constraint::Min(1)])
+        .split(content);
+    (chunks[0], chunks[1])
+}
+
+fn render_global(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: usize, repo: &RepoScan) {
+    let (nav, detail) = global_layout(area);
+    render_global_nav(frame, nav, rows, selected);
+    render_global_detail(frame, detail, rows, selected, repo);
+}
+
+fn render_global_nav(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: usize) {
+    let block = Block::default().borders(Borders::ALL).title(" Global ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if rows.is_empty() {
         lines.push(Line::from(Span::styled(
             "(no skills found)",
             Style::default().fg(Color::DarkGray),
         )));
-    } else {
-        for skill in &scan.skills {
-            lines.push(Line::from(vec![
-                Span::raw(format!("{:<24}", skill.name)),
-                Span::styled(
-                    skill.locations.join(" · "),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]));
+    }
+    for row in rows {
+        match row {
+            NavRow::Header(label) => lines.push(Line::from(Span::styled(
+                label.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ))),
+            NavRow::Empty => lines.push(Line::from(Span::styled(
+                "  (none)",
+                Style::default().fg(Color::DarkGray),
+            ))),
+            NavRow::Skill { index, name, .. } => {
+                let is_sel = *index == selected;
+                let style = if is_sel {
+                    Style::default().fg(Color::Black).bg(Color::Cyan)
+                } else {
+                    Style::default()
+                };
+                let marker = if is_sel { "▸ " } else { "  " };
+                lines.push(Line::from(Span::styled(format!("{marker}{name}"), style)));
+            }
         }
     }
-    lines.push(Line::from(""));
-    let scanned = if scan.scanned_dirs.is_empty() {
-        "scanned: (none found)".to_string()
-    } else {
-        let dirs: Vec<String> = scan
-            .scanned_dirs
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect();
-        format!("scanned: {}", dirs.join(", "))
-    };
-    lines.push(Line::from(Span::styled(
-        scanned,
-        Style::default().fg(Color::DarkGray),
-    )));
+    frame.render_widget(Paragraph::new(lines), inner);
+}
 
-    let block = Block::default().borders(Borders::ALL).title(" Global ");
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+fn render_global_detail(
+    frame: &mut Frame,
+    area: Rect,
+    rows: &[NavRow],
+    selected: usize,
+    repo: &RepoScan,
+) {
+    let (title, body): (String, Vec<Line<'static>>) = match skills::skill_at(rows, selected) {
+        Some(NavRow::Skill { name, location, .. }) => {
+            let status = if skills::is_in_repo(repo, name) {
+                Span::styled("● synced (in repo)", Style::default().fg(Color::Green))
+            } else {
+                Span::styled(
+                    "○ not synced (not in repo)",
+                    Style::default().fg(Color::Yellow),
+                )
+            };
+            let body = vec![
+                Line::from(Span::styled(
+                    name.clone(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("location  ", Style::default().fg(Color::DarkGray)),
+                    Span::raw(location.clone()),
+                ]),
+                Line::from(vec![
+                    Span::styled("status    ", Style::default().fg(Color::DarkGray)),
+                    status,
+                ]),
+            ];
+            (format!(" {name} "), body)
+        }
+        _ => (
+            " skill ".to_string(),
+            vec![Line::from(Span::styled(
+                "No skill selected.",
+                Style::default().fg(Color::DarkGray),
+            ))],
+        ),
+    };
+    let block = Block::default().borders(Borders::ALL).title(title);
+    frame.render_widget(Paragraph::new(body).block(block), area);
 }
 
 fn render_catalog(frame: &mut Frame, area: Rect, config: &Config, repo: &RepoScan) {
@@ -244,7 +301,7 @@ fn render_footer(frame: &mut Frame, area: Rect, screen: &Screen) {
     let text = match screen {
         Screen::Setup(_) => "Tab complete · ⏎ continue · Esc quit",
         Screen::Main(m) if m.settings_open => "esc close settings · q quit",
-        Screen::Main(_) => "↹ tab · 1-4 jump · f refresh · , settings · q quit",
+        Screen::Main(_) => "↑↓ select · ↹ tab · f refresh · , settings · q quit",
     };
     frame.render_widget(
         Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
@@ -309,7 +366,7 @@ mod tests {
     use super::*;
     use crate::app::App;
     use crate::config::Config;
-    use crate::skills::{GlobalScan, GlobalSkill, RepoScan};
+    use crate::skills::{GlobalScan, RepoScan, SkillGroup};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -349,22 +406,24 @@ mod tests {
     }
 
     #[test]
-    fn global_tab_lists_scanned_skills() {
+    fn global_tab_groups_by_location_and_shows_sync() {
         let mut app = App::new(Config {
             repo_path: Some("/x".to_string()),
         });
         app.global = GlobalScan {
-            scanned_dirs: Vec::new(),
-            skills: vec![GlobalSkill {
-                name: "herdr".to_string(),
-                locations: vec!["claude".to_string(), "agents".to_string()],
+            groups: vec![SkillGroup {
+                label: "~/.claude/skills".to_string(),
+                skills: vec!["herdr".to_string(), "okq".to_string()],
             }],
         };
+        app.global_rows = crate::skills::nav_rows(&app.global);
+        app.repo = RepoScan::default();
+        app.global_sel = 0;
         press(&mut app, KeyCode::Char('3')); // Global
         let text = draw(&app);
-        assert!(text.contains("Installed globally"));
-        assert!(text.contains("herdr"));
-        assert!(text.contains("claude"));
+        assert!(text.contains("~/.claude/skills")); // group header in the nav
+        assert!(text.contains("herdr")); // nav item
+        assert!(text.contains("not synced")); // detail for the selected skill (repo empty)
     }
 
     #[test]
