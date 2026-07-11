@@ -11,6 +11,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::{App, MainState, Screen, SetupState, Tab};
 use crate::config::Config;
+use crate::skills::{GlobalScan, RepoScan};
 
 const PREFIX: &str = " skilloom  ";
 const GEAR: &str = "⚙";
@@ -77,7 +78,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         Screen::Main(main) => {
             let r = regions(area);
             render_tabbar(frame, r.tabbar, main);
-            render_content(frame, r.content, main, &app.config);
+            render_content(frame, r.content, app, main);
             render_footer(frame, r.footer, &app.screen);
         }
     }
@@ -111,27 +112,38 @@ fn render_tabbar(frame: &mut Frame, area: Rect, main: &MainState) {
     }
 }
 
-fn render_content(frame: &mut Frame, area: Rect, main: &MainState, config: &Config) {
+fn render_content(frame: &mut Frame, area: Rect, app: &App, main: &MainState) {
     if main.settings_open {
-        let repo = config.repo_path.clone().unwrap_or_else(|| "—".to_string());
-        let body = vec![
-            Line::from("Settings — hello world"),
-            Line::from(""),
-            Line::from(format!("loom-skills repo: {repo}")),
-            Line::from(""),
-            Line::from(Span::styled(
-                "esc to close",
-                Style::default().fg(Color::DarkGray),
-            )),
-        ];
-        let block = Block::default().borders(Borders::ALL).title(" ⚙ settings ");
-        frame.render_widget(Paragraph::new(body).block(block), area);
+        render_settings(frame, area, &app.config);
         return;
     }
+    match main.active {
+        Tab::Global => render_global(frame, area, &app.global),
+        Tab::Catalog => render_catalog(frame, area, &app.config, &app.repo),
+        other => render_placeholder(frame, area, other),
+    }
+}
 
+fn render_settings(frame: &mut Frame, area: Rect, config: &Config) {
+    let repo = config.repo_path.clone().unwrap_or_else(|| "—".to_string());
+    let body = vec![
+        Line::from("Settings — hello world"),
+        Line::from(""),
+        Line::from(format!("loom-skills repo: {repo}")),
+        Line::from(""),
+        Line::from(Span::styled(
+            "esc to close",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    let block = Block::default().borders(Borders::ALL).title(" ⚙ settings ");
+    frame.render_widget(Paragraph::new(body).block(block), area);
+}
+
+fn render_placeholder(frame: &mut Frame, area: Rect, tab: Tab) {
     let body = vec![
         Line::from(Span::styled(
-            main.active.placeholder(),
+            tab.placeholder(),
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
@@ -142,15 +154,97 @@ fn render_content(frame: &mut Frame, area: Rect, main: &MainState, config: &Conf
     ];
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" {} ", main.active.title()));
+        .title(format!(" {} ", tab.title()));
     frame.render_widget(Paragraph::new(body).block(block), area);
+}
+
+fn render_global(frame: &mut Frame, area: Rect, scan: &GlobalScan) {
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            "Installed globally",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+    if scan.skills.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "(no skills found)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for skill in &scan.skills {
+            lines.push(Line::from(vec![
+                Span::raw(format!("{:<24}", skill.name)),
+                Span::styled(
+                    skill.locations.join(" · "),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+    let scanned = if scan.scanned_dirs.is_empty() {
+        "scanned: (none found)".to_string()
+    } else {
+        let dirs: Vec<String> = scan
+            .scanned_dirs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        format!("scanned: {}", dirs.join(", "))
+    };
+    lines.push(Line::from(Span::styled(
+        scanned,
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let block = Block::default().borders(Borders::ALL).title(" Global ");
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_catalog(frame: &mut Frame, area: Rect, config: &Config, repo: &RepoScan) {
+    let repo_path = config.repo_path.clone().unwrap_or_else(|| "—".to_string());
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            format!("loom-skills · {repo_path}"),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("personal ({})", repo.personal.len()),
+            Style::default().fg(Color::Cyan),
+        )),
+    ];
+    push_names(&mut lines, &repo.personal);
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        format!("vendor ({})", repo.vendor.len()),
+        Style::default().fg(Color::Cyan),
+    )));
+    push_names(&mut lines, &repo.vendor);
+
+    let block = Block::default().borders(Borders::ALL).title(" Catalog ");
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn push_names(lines: &mut Vec<Line<'static>>, names: &[String]) {
+    if names.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (none yet)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for name in names {
+            lines.push(Line::from(format!("  {name}")));
+        }
+    }
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, screen: &Screen) {
     let text = match screen {
         Screen::Setup(_) => "Tab complete · ⏎ continue · Esc quit",
         Screen::Main(m) if m.settings_open => "esc close settings · q quit",
-        Screen::Main(_) => "↹ tab · 1-4 jump · , settings · click tabs · q quit",
+        Screen::Main(_) => "↹ tab · 1-4 jump · f refresh · , settings · q quit",
     };
     frame.render_widget(
         Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
@@ -215,8 +309,10 @@ mod tests {
     use super::*;
     use crate::app::App;
     use crate::config::Config;
+    use crate::skills::{GlobalScan, GlobalSkill, RepoScan};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn draw(app: &App) -> String {
         let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
@@ -228,6 +324,10 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect()
+    }
+
+    fn press(app: &mut App, code: KeyCode) {
+        app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
     }
 
     #[test]
@@ -246,5 +346,40 @@ mod tests {
         let app = App::new(Config::default());
         let text = draw(&app);
         assert!(text.contains("first run"));
+    }
+
+    #[test]
+    fn global_tab_lists_scanned_skills() {
+        let mut app = App::new(Config {
+            repo_path: Some("/x".to_string()),
+        });
+        app.global = GlobalScan {
+            scanned_dirs: Vec::new(),
+            skills: vec![GlobalSkill {
+                name: "herdr".to_string(),
+                locations: vec!["claude".to_string(), "agents".to_string()],
+            }],
+        };
+        press(&mut app, KeyCode::Char('3')); // Global
+        let text = draw(&app);
+        assert!(text.contains("Installed globally"));
+        assert!(text.contains("herdr"));
+        assert!(text.contains("claude"));
+    }
+
+    #[test]
+    fn catalog_tab_shows_repo_sections() {
+        let mut app = App::new(Config {
+            repo_path: Some("/x".to_string()),
+        });
+        app.repo = RepoScan {
+            personal: vec!["mine".to_string()],
+            vendor: Vec::new(),
+        };
+        press(&mut app, KeyCode::Char('4')); // Catalog
+        let text = draw(&app);
+        assert!(text.contains("personal (1)"));
+        assert!(text.contains("mine"));
+        assert!(text.contains("vendor (0)"));
     }
 }

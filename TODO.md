@@ -8,8 +8,10 @@ Small testable slices:
 
 - [x] First-run setup screen — repo path field with directory autocomplete; saves `~/.config/skilloom/config.toml`.
 - [x] Tabbed app shell — Dashboard / Projects / Global / Catalog + settings gear; keyboard (`↹`/`1-4`/`,`) and mouse (click tabs) nav; placeholder per tab.
-- [ ] Read the loom-skills repo (`vendor/` + `personal/`) and list real skills in Catalog.
-- [ ] Populate Global (deployed / available / on disk) and Projects from config + disk.
+- [x] Global tab: list skills installed in the usual `~/` agent dirs (`.claude`/`.agents`/`.codex`/`.cursor`), deduped by folder name with which dirs each is in; `f` rescans.
+- [x] Catalog tab: list repo skills from `vendor/` + `personal/` (empty until skills are added).
+- [ ] Show richer per-skill detail (read `SKILL.md` name/description, not just folder).
+- [ ] Populate Projects from config + disk; Global "available / on disk" distinctions.
 - [ ] Add-remote flow (git repo → `vendor/<name>/` + `.skilloom.toml`).
 - [ ] The sync engine + ledger (see specs below).
 

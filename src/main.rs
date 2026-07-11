@@ -11,6 +11,7 @@ mod app;
 mod complete;
 mod config;
 mod paths;
+mod skills;
 mod ui;
 
 use std::io::{self, Stdout};

@@ -10,6 +10,7 @@ use ratatui::layout::Rect;
 use crate::complete;
 use crate::config::Config;
 use crate::paths;
+use crate::skills;
 use crate::ui;
 
 /// The major tabs across the top of the main app.
@@ -154,6 +155,10 @@ pub struct App {
     pub should_quit: bool,
     /// Set when the config needs to be written; the runner persists and clears it.
     pub save_requested: bool,
+    /// Skills found in the global agent dirs (`~/.claude/skills`, …).
+    pub global: skills::GlobalScan,
+    /// Skills found in the loom-skills repo (`personal/`, `vendor/`).
+    pub repo: skills::RepoScan,
 }
 
 impl App {
@@ -163,12 +168,29 @@ impl App {
         } else {
             Screen::Setup(SetupState::new(default_setup_input()))
         };
-        App {
+        let mut app = App {
             screen,
             config,
             should_quit: false,
             save_requested: false,
+            global: skills::GlobalScan::default(),
+            repo: skills::RepoScan::default(),
+        };
+        if app.config.is_configured() {
+            app.rescan();
         }
+        app
+    }
+
+    /// Re-read installed skills from disk: the global agent dirs and the repo.
+    pub fn rescan(&mut self) {
+        self.global = skills::scan_global();
+        self.repo = self
+            .config
+            .repo_path
+            .as_deref()
+            .map(skills::scan_repo)
+            .unwrap_or_default();
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
@@ -228,6 +250,7 @@ impl App {
                     m.open_settings();
                 }
             }
+            KeyCode::Char('f') => self.rescan(),
             KeyCode::Char(c @ '1'..='4') => {
                 if let Some(m) = self.main_mut() {
                     m.select((c as u8 - b'1') as usize);
@@ -284,6 +307,7 @@ impl App {
         }
         self.config.repo_path = Some(expanded.to_string_lossy().into_owned());
         self.save_requested = true;
+        self.rescan();
         self.screen = Screen::Main(MainState::new());
     }
 
