@@ -10,6 +10,7 @@ use ratatui::layout::Rect;
 use crate::complete;
 use crate::config::Config;
 use crate::paths;
+use crate::scroll::Scroll;
 use crate::skills;
 use crate::ui;
 
@@ -161,6 +162,8 @@ pub struct App {
     pub global_rows: Vec<skills::NavRow>,
     /// Selected skill index within the Global left-nav.
     pub global_sel: usize,
+    /// Scroll offset for the Global left-nav.
+    pub global_scroll: Scroll,
     /// Skills found in the loom-skills repo (`personal/`, `vendor/`).
     pub repo: skills::RepoScan,
 }
@@ -180,6 +183,7 @@ impl App {
             global: skills::GlobalScan::default(),
             global_rows: Vec::new(),
             global_sel: 0,
+            global_scroll: Scroll::default(),
             repo: skills::RepoScan::default(),
         };
         if app.config.is_configured() {
@@ -305,7 +309,9 @@ impl App {
         // Clicking a skill row in the Global left nav selects it.
         if self.on_global_tab() {
             let (nav, _detail) = ui::global_layout(regions.content);
-            if let Some(index) = nav_row_hit(&self.global_rows, nav, col, row) {
+            if let Some(index) =
+                nav_row_hit(&self.global_rows, nav, col, row, self.global_scroll.offset)
+            {
                 self.global_sel = index;
             }
         }
@@ -385,8 +391,15 @@ fn contains(rect: Rect, col: u16, row: u16) -> bool {
 }
 
 /// Which skill (flat index) a click at `(col, row)` lands on inside the Global
-/// left-nav rect, accounting for the border. `None` if it's a header/empty/gap.
-fn nav_row_hit(rows: &[skills::NavRow], nav: Rect, col: u16, row: u16) -> Option<usize> {
+/// left-nav rect, accounting for the border and scroll `offset`. `None` if it's
+/// a header/empty/gap.
+fn nav_row_hit(
+    rows: &[skills::NavRow],
+    nav: Rect,
+    col: u16,
+    row: u16,
+    offset: usize,
+) -> Option<usize> {
     if nav.width < 2 || nav.height < 2 {
         return None;
     }
@@ -398,7 +411,7 @@ fn nav_row_hit(rows: &[skills::NavRow], nav: Rect, col: u16, row: u16) -> Option
     if row < inner_y || row >= inner_y + (nav.height - 2) {
         return None;
     }
-    let visual = (row - inner_y) as usize;
+    let visual = offset + (row - inner_y) as usize;
     skills::skill_index_at_line(rows, visual)
 }
 

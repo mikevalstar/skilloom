@@ -11,6 +11,7 @@ mod app;
 mod complete;
 mod config;
 mod paths;
+mod scroll;
 mod skills;
 mod ui;
 

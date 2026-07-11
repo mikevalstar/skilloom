@@ -7,7 +7,9 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{
+    Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+};
 
 use crate::app::{App, MainState, Screen, SetupState, Tab};
 use crate::config::Config;
@@ -71,8 +73,23 @@ pub fn tab_spans(tabbar: Rect) -> (Vec<(Tab, Rect)>, Option<Rect>) {
     (spans, gear)
 }
 
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
+
+    // Stateful pre-step: keep the Global selection scrolled into view. Uses the
+    // live viewport height, so it lives here rather than in the event handlers.
+    if let Screen::Main(m) = &app.screen
+        && m.active == Tab::Global
+        && !m.settings_open
+    {
+        let (nav_area, _) = global_layout(regions(area).content);
+        let viewport = nav_area.height.saturating_sub(2) as usize; // inside borders
+        let total = skills::total_lines(&app.global_rows);
+        let (start, len) = skills::selected_line_range(&app.global_rows, app.global_sel);
+        app.global_scroll.focus(start, len, viewport, total);
+    }
+
+    let app = &*app;
     match &app.screen {
         Screen::Setup(setup) => render_setup(frame, area, setup),
         Screen::Main(main) => {
@@ -118,7 +135,14 @@ fn render_content(frame: &mut Frame, area: Rect, app: &App, main: &MainState) {
         return;
     }
     match main.active {
-        Tab::Global => render_global(frame, area, &app.global_rows, app.global_sel, &app.repo),
+        Tab::Global => render_global(
+            frame,
+            area,
+            &app.global_rows,
+            app.global_sel,
+            &app.repo,
+            app.global_scroll.offset,
+        ),
         Tab::Catalog => render_catalog(frame, area, &app.config, &app.repo),
         other => render_placeholder(frame, area, other),
     }
@@ -168,13 +192,26 @@ pub fn global_layout(content: Rect) -> (Rect, Rect) {
     (chunks[0], chunks[1])
 }
 
-fn render_global(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: usize, repo: &RepoScan) {
+fn render_global(
+    frame: &mut Frame,
+    area: Rect,
+    rows: &[NavRow],
+    selected: usize,
+    repo: &RepoScan,
+    offset: usize,
+) {
     let (nav, detail) = global_layout(area);
-    render_global_nav(frame, nav, rows, selected);
+    render_global_nav(frame, nav, rows, selected, offset);
     render_global_detail(frame, detail, rows, selected, repo);
 }
 
-fn render_global_nav(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: usize) {
+fn render_global_nav(
+    frame: &mut Frame,
+    area: Rect,
+    rows: &[NavRow],
+    selected: usize,
+    offset: usize,
+) {
     let block = Block::default().borders(Borders::ALL).title(" Global ");
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -233,7 +270,21 @@ fn render_global_nav(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: u
             }
         }
     }
-    frame.render_widget(Paragraph::new(lines), inner);
+
+    // Show only the scrolled-into-view slice; draw a scrollbar when it overflows.
+    let viewport = inner.height as usize;
+    let start = offset.min(lines.len());
+    let end = (start + viewport).min(lines.len());
+    let visible = lines[start..end].to_vec();
+    frame.render_widget(Paragraph::new(visible), inner);
+
+    if lines.len() > viewport {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None);
+        let mut state = ScrollbarState::new(lines.len()).position(offset);
+        frame.render_stateful_widget(scrollbar, area, &mut state);
+    }
 }
 
 fn render_global_detail(
@@ -451,7 +502,7 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    fn draw(app: &App) -> String {
+    fn draw(app: &mut App) -> String {
         let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
         terminal.draw(|frame| render(frame, app)).unwrap();
         terminal
@@ -469,10 +520,10 @@ mod tests {
 
     #[test]
     fn main_screen_shows_tabs_and_placeholder() {
-        let app = App::new(Config {
+        let mut app = App::new(Config {
             repo_path: Some("/x".to_string()),
         });
-        let text = draw(&app);
+        let text = draw(&mut app);
         assert!(text.contains("Dashboard"));
         assert!(text.contains("Catalog"));
         assert!(text.contains("hello world"));
@@ -480,8 +531,8 @@ mod tests {
 
     #[test]
     fn setup_screen_shows_prompt() {
-        let app = App::new(Config::default());
-        let text = draw(&app);
+        let mut app = App::new(Config::default());
+        let text = draw(&mut app);
         assert!(text.contains("first run"));
     }
 
@@ -507,7 +558,7 @@ mod tests {
         app.repo = RepoScan::default();
         app.global_sel = 0; // herdr, the symlink
         press(&mut app, KeyCode::Char('3')); // Global
-        let text = draw(&app);
+        let text = draw(&mut app);
         assert!(text.contains("~/.claude/skills")); // group header in the nav
         assert!(text.contains("herdr")); // card name
         assert!(text.contains("Control herdr from inside it")); // card subtitle (description)
@@ -528,7 +579,7 @@ mod tests {
             vendor: Vec::new(),
         };
         press(&mut app, KeyCode::Char('4')); // Catalog
-        let text = draw(&app);
+        let text = draw(&mut app);
         assert!(text.contains("personal (1)"));
         assert!(text.contains("mine"));
         assert!(text.contains("vendor (0)"));

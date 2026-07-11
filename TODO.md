@@ -12,8 +12,9 @@ Small testable slices:
 - [x] Symlink-aware: flag symlinked skills (`@`) and show their real target.
 - [x] Two-line skill cards (name + `SKILL.md` description subtitle, `@` floated right); right pane is a metadata header card with a "details" box below.
 - [x] Catalog tab: list repo skills from `vendor/` + `personal/` (empty until skills are added).
+- [x] Left-nav scrolling: reusable `scroll::Scroll` keeps the selection in view, with a scrollbar. Built content-agnostic for reuse.
 - [ ] Fill the "details" box with the `SKILL.md` body.
-- [ ] Long lists: scroll the left nav when it overflows (cards make this sooner).
+- [ ] Promote the card list + master-detail into a reusable widget (so Catalog/Projects reuse it, not just `scroll`).
 - [ ] Give Catalog the same card/master-detail treatment.
 - [ ] Populate Projects from config + disk.
 - [ ] Add-remote flow (git repo → `vendor/<name>/` + `.skilloom.toml`).

@@ -259,6 +259,26 @@ pub fn skill_index_at_line(rows: &[NavRow], line: usize) -> Option<usize> {
     None
 }
 
+/// Total visual lines the nav occupies (skills are two lines).
+pub fn total_lines(rows: &[NavRow]) -> usize {
+    rows.iter().map(nav_row_height).sum()
+}
+
+/// The `(start line, height)` of the selected skill's card, for scrolling.
+pub fn selected_line_range(rows: &[NavRow], selected: usize) -> (usize, usize) {
+    let mut y = 0;
+    for row in rows {
+        let h = nav_row_height(row);
+        if let NavRow::Skill { index, .. } = row
+            && *index == selected
+        {
+            return (y, h);
+        }
+        y += h;
+    }
+    (0, 0)
+}
+
 /// Number of selectable skills across the nav rows.
 pub fn skill_count(rows: &[NavRow]) -> usize {
     rows.iter()
@@ -387,6 +407,20 @@ mod tests {
         assert_eq!(skill_index_at_line(&rows, 3), Some(1));
         assert_eq!(skill_index_at_line(&rows, 4), Some(1));
         assert_eq!(skill_index_at_line(&rows, 5), None);
+    }
+
+    #[test]
+    fn line_geometry_for_scrolling() {
+        let scan = GlobalScan {
+            groups: vec![SkillGroup {
+                label: "A".to_string(),
+                skills: vec![SkillEntry::new("x"), SkillEntry::new("y")],
+            }],
+        };
+        let rows = nav_rows(&scan);
+        assert_eq!(total_lines(&rows), 1 + 2 + 2); // header + two 2-line cards
+        assert_eq!(selected_line_range(&rows, 0), (1, 2)); // x starts at line 1
+        assert_eq!(selected_line_range(&rows, 1), (3, 2)); // y starts at line 3
     }
 
     #[test]
