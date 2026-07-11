@@ -1,0 +1,17 @@
+[package]
+name = "skilloom"
+version = "0.0.0"
+edition = "2024"
+description = "A TUI-first manager for AI agent skills — personal skills versioned in a git repo, third-party skills tracked from upstream, reconciled across agents and projects."
+repository = "https://github.com/mikevalstar/skilloom"
+readme = "README.md"
+publish = false
+
+[[bin]]
+name = "skilloom"
+path = "src/main.rs"
+
+# No dependencies yet. The core stack (ratatui, crossterm, tokio, serde, clap)
+# is decided in docs/adrs/0002-rust-and-ratatui-for-the-tui.md and added — with
+# pinned versions — during the implementation phase. See docs/README.md.
+[dependencies]
