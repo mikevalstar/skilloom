@@ -65,7 +65,8 @@ loom-skills/
 Split along the standard XDG lines:
 
 - **Config** — `~/.config/skilloom/config.toml` (your intent, portable): the loom-skills repo location, the list of tracked project folders, the agent targets, and which skills you want synced where.
-- **State** — `~/.local/state/skilloom/` (machine-local, derived): last-sync timestamps, resolved commits, caches. Never in `~/.config`.
+- **Ledger** — `~/.config/skilloom/sync.toml` (**built**): the which-goes-where record — one `[[synced]]` entry per skill × destination (`skill`/`origin`/`destination`). Kept in the config folder (beside `config.toml`, not in it) because it's closer to intent/curation than to derived state.
+- **State** — `~/.local/state/skilloom/` (machine-local, derived): last-sync timestamps, resolved commits, caches. Never in `~/.config`. *(Not built yet — the richer per-sync metadata that feeds change-detection lands here; the intent-level `sync.toml` above stays in config.)*
 
 *(Open question: whether the "which skill goes where" curation should also live committed in the repo so it's portable across machines, rather than only in machine-local config.)*
 
@@ -87,13 +88,15 @@ Mapping directly to the functionality you described:
 
 ## Sync directions (reference)
 
-| From → To | What it does | Trigger |
-|-----------|-------------|---------|
-| remote → repo `vendor/` | copy/update a third-party skill + refresh its `.skilloom.toml` | add / fetch |
-| repo → global | install/update a curated skill into `~/.agents` / `~/.claude` | sync |
-| global → repo `personal/` | capture a personal global skill up | import |
-| repo → project | install/update a curated skill into a tracked project | sync |
-| project → repo | capture a project skill up (opt-in only) | sync |
+| From → To | What it does | Trigger | Status |
+|-----------|-------------|---------|--------|
+| remote → repo `vendor/` | copy/update a third-party skill + refresh its `.skilloom.toml` | add / fetch | planned |
+| repo → global | copy to `~/.agents/skills` + symlink into other agent dirs; record in `sync.toml` | `s` on Catalog | **built** |
+| global → repo `personal/` | capture a personal global skill up | import | planned |
+| repo → project | install/update a curated skill into a tracked project | sync | planned (stub) |
+| project → repo | capture a project skill up (opt-in only) | sync | planned |
+
+Global also supports **remove** (`x`) — un-install a skill from an agent dir, symlink- and catalog-aware.
 
 The **ledger** (in state/config) answers "which skills go where" and drives the status shown in the TUI: for each skill × destination, is it in sync, does one side have newer content, or is it not synced at all.
 
@@ -119,7 +122,9 @@ The **ledger** (in state/config) answers "which skills go where" and drives the 
 
 ## What's built so far
 
-The read side of this model exists: the TUI's **Global** tab scans the agent dirs and browses installed skills (grouped by location, symlink-aware, with `SKILL.md` descriptions), and **Catalog** lists the repo's `personal/`+`vendor/`. No *write* path yet — add-remote, import, and all sync directions above are still to come. UI detail: [tui-dashboard.md](tui-dashboard.md).
+The read side of this model exists: the TUI's **Global** tab scans the agent dirs and browses installed skills (grouped by location, symlink-aware, with `SKILL.md` descriptions), and **Catalog** browses the repo's `personal/`+`vendor/` in the same master-detail widget — each repo skill showing whether it's currently installed in a global dir (the mirror of Global's "in repo" check). A sample skill is checked into loom-skills so the Catalog has a real entry; the repo's on-disk layout is documented in [loom-skills-repo-layout.md](../guides/loom-skills-repo-layout.md).
+
+The **first write path is built**: **repo → global**. From the Catalog you sync a skill (a modal picks Global — Project is a "coming soon" stub) and skilloom copies the real content into the canonical store `~/.agents/skills/<name>/` and **symlinks** it into the other detected agent dirs, recording the sync in a ledger at `~/.config/skilloom/sync.toml`. The Global tab can **remove** an installed skill (with a symlink-aware, catalog-aware confirmation). Walkthroughs: [sync-a-skill-to-global.md](../workflows/sync-a-skill-to-global.md), [remove-a-global-skill.md](../workflows/remove-a-global-skill.md). Still to come: add-remote (remote → `vendor/`), import (global → `personal/`), and the project directions. UI detail: [tui-dashboard.md](tui-dashboard.md).
 
 ## Open questions
 

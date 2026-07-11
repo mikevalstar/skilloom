@@ -10,9 +10,11 @@
 mod app;
 mod complete;
 mod config;
+mod ledger;
 mod paths;
 mod scroll;
 mod skills;
+mod sync;
 mod ui;
 
 use std::io::{self, Stdout};
@@ -58,6 +60,13 @@ fn run(terminal: &mut Tui, app: &mut App) -> Result<()> {
                 }
                 _ => {}
             }
+        }
+
+        // Execute any mutation the input handler queued (sync/remove). Kept out
+        // of `on_key` so input handling stays pure and unit-testable; the effects
+        // (fs writes, ledger save, rescan) and their errors are handled here.
+        if app.pending.is_some() {
+            app.apply_pending();
         }
 
         if app.save_requested {

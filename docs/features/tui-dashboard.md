@@ -9,7 +9,7 @@ phase: 1
 
 # TUI — screens and interaction design
 
-> **Part built, part sketch.** **Built and current:** the first-run screen, the tab shell + settings gear, and the **Global** tab (its mockup below matches the code). **Still design intent:** the Dashboard, Projects, and Catalog mockups, the overlays (skill detail / add-remote / sync plan), and the full sync-status vocabulary — those are aspirational until the write/sync engine exists. The model these screens sit on is in [overview.md](overview.md); stack and layout rules in [ratatui-tui-stack.md](../guides/ratatui-tui-stack.md).
+> **Part built, part sketch.** **Built and current:** the first-run screen, the tab shell + settings gear, the **Global** and **Catalog** tabs (their mockups below match the code — both the same master-detail widget), and the first write path — the **sync modal** (Catalog → global) and the **remove-confirm modal** (Global). **Still design intent:** the Dashboard and Projects mockups, the skill-detail / add-remote / sync-plan overlays, and the full sync-status vocabulary — those are aspirational until the rest of the sync engine exists. The model these screens sit on is in [overview.md](overview.md); the sync/remove flows in [sync-a-skill-to-global.md](../workflows/sync-a-skill-to-global.md) and [remove-a-global-skill.md](../workflows/remove-a-global-skill.md); stack rules in [ratatui-tui-stack.md](../guides/ratatui-tui-stack.md); the repo the Catalog reads in [loom-skills-repo-layout.md](../guides/loom-skills-repo-layout.md).
 
 ## Assumptions
 
@@ -36,7 +36,7 @@ The four tabs map onto the hub-and-spoke model: **Catalog** is the library (the 
 | **Dashboard** | Overview: search + summary (updates available, sync roll-up, recent activity) | — (full-width) |
 | **Projects** | Your tracked projects; pick one to manage its skills | project list |
 | **Global** | Installed skills, grouped by agent dir — browse (read-only today) | location groups |
-| **Catalog** | The whole loom-skills library (`personal/` + `vendor/`); browse, add remote, deploy | categories / sources |
+| **Catalog** | The loom-skills library (`personal/` + `vendor/`) — browse (read-only today); add remote / deploy later | `personal` / `vendor` groups |
 | **⚙ Settings** | Repo location, agent targets, sync options, about — reached via the gear (top-right) or `,` | settings sections |
 
 ## Legend
@@ -56,7 +56,7 @@ Code blocks are monochrome, so state is carried by glyphs; each maps to a themed
 
 **Origin:** `personal` · `vendor:<src>`. **Deployed to:** `G` = global · project names · `—` = nowhere. **Selection:** `▸` marks the focused row/nav item. **Symlink:** a trailing `@` marks a skill that's a symlink; the detail shows its real target.
 
-> **Implemented today:** the Global tab uses only `●` (tracked in the repo) and `○` (not in the repo) — a folder-**name match**, a placeholder. The fuller vocabulary above (`↑`/`▲`/`↕`, "deployed to", origins) arrives with the sync ledger.
+> **Implemented today:** both master-detail tabs use only `●`/`○`, as a folder-**name match** (a placeholder). Global: `●` tracked in the repo / `○` not. Catalog: `●` installed in a global dir / `○` not — the mirror check. The fuller vocabulary above (`↑`/`▲`/`↕`, "deployed to", origins) arrives with the sync ledger.
 
 ## Navigation
 
@@ -151,7 +151,7 @@ Left nav = tracked projects; content = the selected project's skills and actions
 
 ## Global tab — **built, current**
 
-Master-detail. **Left nav:** installed skills grouped by agent dir (`~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`, `~/.cursor/skills`; empty dirs show `(none)`, missing dirs are skipped). Each skill is a **two-line card** — name on top with the symlink `@` floated right, the `SKILL.md` description below it (grayed, truncated). **Right pane:** a metadata **header card** (location, `links to <real path>` for symlinks, synced status) over a **details box** reserved for the `SKILL.md` body. The nav **scrolls** (scrollbar on overflow) to keep the selection visible. Select with `↑↓`/`j`/`k`, a click, or the scroll wheel. Read-only today — actions arrive with the sync engine.
+Master-detail. **Left nav:** installed skills grouped by agent dir (`~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`, `~/.cursor/skills`; empty dirs show `(none)`, missing dirs are skipped). Each skill is a **two-line card** — name on top with the symlink `@` floated right, the `SKILL.md` description below it (grayed, truncated). **Right pane:** a metadata **header card** (location, `links to <real path>` for symlinks, synced status) over a **details box** reserved for the `SKILL.md` body, with a **`[ Remove ]`** action button top-right. The nav **scrolls** (scrollbar on overflow) to keep the selection visible. Select with `↑↓`/`j`/`k`, a click, or the scroll wheel; **`x`** (or the button) opens the remove-confirm modal.
 
 ```text
 ┌ skilloom ─ Dashboard  Projects  [ Global ]  Catalog ─────────────────────  ⚙ ┐
@@ -171,25 +171,38 @@ Master-detail. **Left nav:** installed skills grouped by agent dir (`~/.claude/s
 
 Note: `herdr` appears under both `~/.claude` (a symlink, `@`) and `~/.agents` (the real dir, no `@`) — the symlink flag makes the duplication legible. Its `links to` line points at the real content.
 
-## Catalog tab
+## Catalog tab — **built, current**
 
-The whole library. Left nav = categories (`All`/`Personal`/`Vendor`) and, under a divider, by-source groups. Content = the skills, with a **Deployed to** column showing where each lands. `+ add remote skill` lives here.
+The loom-skills library, as the **same master-detail widget as Global** (shared
+code — see [ratatui-tui-stack.md](../guides/ratatui-tui-stack.md)). **Left nav:**
+the repo's skills grouped into `personal` and `vendor` (both always shown; an
+empty group reads `(none)`), each a two-line card (name + `SKILL.md` description).
+**Right pane:** a metadata **header card** (location = `personal`/`vendor`, and an
+`installed globally` status — the mirror of Global's "in repo" check) over the
+**details box** reserved for the `SKILL.md` body, with a **`[ Sync → ]`** action
+button top-right. Same nav: `↑↓`/`j`/`k`, click, or scroll wheel; the list scrolls
+to keep the selection visible. **`s`** (or the button) opens the **sync modal**
+(below); `+ add remote skill` still comes with the vendor write path. The repo
+layout it reads is documented in
+[loom-skills-repo-layout.md](../guides/loom-skills-repo-layout.md).
 
 ```text
 ┌ skilloom ─ Dashboard   Projects   Global   [ Catalog ] ─────────────────  ⚙ ┐
-│ CATALOG           │ All skills in loom-skills                    ⌕ filter   │
-│ ▸ All · 24        │ ────────────────────────────────────────────────────── │
-│   Personal · 9    │ ST  SKILL           ORIGIN             DEPLOYED TO       │
-│   Vendor · 15     │ ●   commit-helper   personal           G  web-app  api  │
-│ ─ sources         │ ▲   rust-testing    vendor:x/skills    G  api           │
-│   x/skills        │ ●   pdf-filling     vendor:anthropic   —                │
-│   y/kit           │ ○   slack-gif       vendor:anthropic   —                │
-│   anthropic/skills│                                                         │
-│                   │ + add remote skill                                      │
-│                   │ [ fetch updates ]   [ deploy → ]                        │
-├ ↹ tab   ↑↓ nav   ⏎ detail   a add remote   f fetch   click   , settings  ? q┤
+│ Catalog ─────────────────────┐┌ sample-skill ──────────────────────────────┐│
+│ personal                     ││ location  personal                          ││
+│ ▸ sample-skill               ││ status    ○ not installed                   ││
+│   A tiny sample skill so sk…  │└─────────────────────────────────────────────┘│
+│ vendor                       │┌ details ────────────────────────────────────┐│
+│   (none)                     ││ SKILL.md contents will show here.           ││
+│                              ││                                             ││
+├ ↑↓ select · ↹ tab · f refresh · , settings · q quit ─────────────────────────┤
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The fuller design — category nav (`All`/`Personal`/`Vendor`), by-source groups, a
+**Deployed to** column, `+ add remote skill`, and inline `[ fetch ]`/`[ deploy ]`
+actions — is deferred to the sync engine and ledger; the read-only master-detail
+above is what ships today.
 
 ## Settings (⚙)
 
@@ -217,7 +230,53 @@ Reached via the top-right gear or `,`. Left nav = settings sections; `esc` retur
 
 ## Overlays
 
-Reachable from any tab; float centered over the frame.
+Reachable from any tab; float centered over the frame. Two are **built**; the
+rest are design intent.
+
+### Sync modal — **built** (`s` on Catalog)
+
+Pick a destination and which agent dirs to symlink into, then Sync. Global works;
+Project is a stub. Interactive rows form one focus ring (keyboard `↑↓` + `space`/`⏎`,
+or click); the Sync button is focused on open, so `s` then `⏎` syncs with defaults.
+
+```text
+┌ sync skill ──────────────────────────────────────────────────┐
+│ Sync 'sample-skill'  (personal)                              │
+│                                                              │
+│ destination                                                  │
+│   (•) Global                                                 │
+│   ( ) Project — coming soon                                  │
+│                                                              │
+│ link into                                                    │
+│   [x] ~/.claude/skills                                        │
+│   [x] ~/.codex/skills                                         │
+│                                                              │
+│   [ Sync ]                                                   │
+│   [ Cancel ]                                                 │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Remove-confirm modal — **built** (`x` on Global)
+
+The permanence line adapts: green when the skill is in your Catalog (re-syncable),
+yellow for a not-in-Catalog symlink (only the link goes), red for a not-in-Catalog
+real dir (permanent). Focus defaults to Cancel.
+
+```text
+┌ remove skill ────────────────────────────────────────────────┐
+│ Remove 'herdr'?                                              │
+│                                                              │
+│ from  ~/.claude/skills                                       │
+│ symlink → ~/.agents/skills/herdr (only the link is removed)  │
+│                                                              │
+│ Not in your Catalog — but this only unlinks; the target is … │
+│                                                              │
+│   [ Remove ]                                                 │
+│   [ Cancel ]                                                 │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Design intent (not built)
 
 **Skill detail** (`⏎` on a skill) — the per-destination truth for one skill:
 
@@ -298,7 +357,7 @@ Error (non-fatal; the action left things unchanged):
 
 Both are first-class (crossterm mouse capture; we hit-test regions).
 
-**Clickable (built):** top tabs, the gear, and Global left-nav skill cards (click = select). **Planned:** inline buttons (`[ sync ]`, `[ install ]`, `+ add remote skill`) and double-click-to-open-detail. **Scroll wheel (built):** moves the selection in the Global nav — the view follows, consistent with `↑↓`.
+**Clickable (built):** top tabs, the gear, the Global/Catalog left-nav skill cards (click = select), the detail **`[ Sync → ]`** / **`[ Remove ]`** action buttons, and every interactive row inside the sync/remove modals (destination, link toggles, Sync/Remove/Cancel). **Planned:** the remaining inline buttons (`+ add remote skill`) and double-click-to-open-detail. **Scroll wheel (built):** moves the selection in the active master-detail nav (Global/Catalog) — the view follows, consistent with `↑↓`.
 
 **Global keys**
 
@@ -315,7 +374,7 @@ Both are first-class (crossterm mouse capture; we hit-test regions).
 
 **Context keys** (shown in each tab's footer): `↑↓`/`jk` nav · `⏎` open/detail · `space` select · `a` add remote (Catalog) · `i` import (Global) · `+` add project (Projects).
 
-> **Built today:** `↹` / `1`–`4` / `,` / `q` / `esc`, `↑↓` `j` `k`, `f` (rescan skills from disk), plus click and scroll wheel. **Planned:** `/` search, `s` sync, `⏎` overlays, `space` select, `a` / `i` / `+` — each arrives with the feature it drives.
+> **Built today:** `↹` / `1`–`4` / `,` / `q` / `esc`, `↑↓` `j` `k`, `f` (rescan), **`s`** (sync the selected Catalog skill), **`x`** (remove the selected Global skill), plus the modal keys (`↑↓`/`space`/`⏎`/`esc`, `y`/`n` on remove) and click / scroll wheel. **Planned:** `/` search, the multi-action sync plan, `⏎` skill-detail overlay, `a` add-remote, `i` import, `+` add project — each arrives with the feature it drives.
 
 ## Open questions
 

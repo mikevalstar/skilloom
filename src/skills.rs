@@ -58,11 +58,12 @@ pub struct GlobalScan {
     pub groups: Vec<SkillGroup>,
 }
 
-/// Skills present in the loom-skills repo.
+/// Skills present in the loom-skills repo, grouped like [`GlobalScan`] so the
+/// Catalog tab can reuse the same master-detail machinery. The two groups are
+/// `personal/` and `vendor/`, always both present (empty if the dir is absent).
 #[derive(Debug, Default, Clone)]
 pub struct RepoScan {
-    pub personal: Vec<String>,
-    pub vendor: Vec<String>,
+    pub groups: Vec<SkillGroup>,
 }
 
 /// A row in the grouped left-nav: a location header, an empty-group marker, or a
@@ -78,23 +79,6 @@ pub enum NavRow {
         link_target: Option<String>,
         description: Option<String>,
     },
-}
-
-/// Immediate subdirectory names of `dir`, sorted, hidden dirs skipped.
-pub fn subdirs(dir: &Path) -> Vec<String> {
-    let mut names = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if !name.starts_with('.') {
-                    names.push(name);
-                }
-            }
-        }
-    }
-    names.sort();
-    names
 }
 
 /// Skill entries (dirs, incl. symlinked dirs) in `dir`, sorted, with symlink
@@ -202,20 +186,27 @@ pub fn scan_global() -> GlobalScan {
     GlobalScan { groups }
 }
 
-/// Scan `<repo>/personal` and `<repo>/vendor` for skill folders.
+/// Scan `<repo>/personal` and `<repo>/vendor` for skill folders, reading each
+/// skill's `SKILL.md` description. Both groups are always present (empty when the
+/// dir is absent) so the Catalog layout is stable.
 pub fn scan_repo(repo_path: &str) -> RepoScan {
     let base = paths::expand_tilde(repo_path);
-    RepoScan {
-        personal: subdirs(&base.join("personal")),
-        vendor: subdirs(&base.join("vendor")),
-    }
+    let groups = ["personal", "vendor"]
+        .iter()
+        .map(|&sub| SkillGroup {
+            label: sub.to_string(),
+            skills: list_skill_entries(&base.join(sub)),
+        })
+        .collect();
+    RepoScan { groups }
 }
 
-/// Flatten groups into left-nav rows, numbering selectable skills in order.
-pub fn nav_rows(scan: &GlobalScan) -> Vec<NavRow> {
+/// Flatten skill groups into left-nav rows, numbering selectable skills in order.
+/// Shared by the Global and Catalog tabs.
+pub fn nav_rows(groups: &[SkillGroup]) -> Vec<NavRow> {
     let mut rows = Vec::new();
     let mut index = 0;
-    for group in &scan.groups {
+    for group in groups {
         rows.push(NavRow::Header(group.label.clone()));
         if group.skills.is_empty() {
             rows.push(NavRow::Empty);
@@ -292,9 +283,16 @@ pub fn skill_at(rows: &[NavRow], index: usize) -> Option<&NavRow> {
         .find(|r| matches!(r, NavRow::Skill { index: i, .. } if *i == index))
 }
 
+/// Whether any group holds a skill with this folder name.
+pub fn groups_contain(groups: &[SkillGroup], name: &str) -> bool {
+    groups
+        .iter()
+        .any(|g| g.skills.iter().any(|s| s.name == name))
+}
+
 /// Whether a skill (by folder name) is tracked in the loom-skills repo.
 pub fn is_in_repo(repo: &RepoScan, name: &str) -> bool {
-    repo.personal.iter().any(|n| n == name) || repo.vendor.iter().any(|n| n == name)
+    groups_contain(&repo.groups, name)
 }
 
 #[cfg(test)]
@@ -303,13 +301,17 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn subdirs_lists_sorted_dirs_only() {
+    fn list_skill_entries_lists_sorted_dirs_only() {
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir(tmp.path().join("b-skill")).unwrap();
         fs::create_dir(tmp.path().join("a-skill")).unwrap();
         fs::write(tmp.path().join("SKILL.md"), b"x").unwrap();
         fs::create_dir(tmp.path().join(".hidden")).unwrap();
-        assert_eq!(subdirs(tmp.path()), vec!["a-skill", "b-skill"]);
+        let names: Vec<String> = list_skill_entries(tmp.path())
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, vec!["a-skill", "b-skill"]);
     }
 
     #[cfg(unix)]
@@ -380,7 +382,7 @@ mod tests {
                 },
             ],
         };
-        let rows = nav_rows(&scan);
+        let rows = nav_rows(&scan.groups);
         assert_eq!(skill_count(&rows), 3);
         assert!(matches!(&rows[0], NavRow::Header(l) if l == "A"));
         assert!(matches!(&rows[1], NavRow::Skill { index: 0, .. }));
@@ -399,7 +401,7 @@ mod tests {
                 skills: vec![SkillEntry::new("x"), SkillEntry::new("y")],
             }],
         };
-        let rows = nav_rows(&scan);
+        let rows = nav_rows(&scan.groups);
         // Header @0; skill x @1,2; skill y @3,4.
         assert_eq!(skill_index_at_line(&rows, 0), None);
         assert_eq!(skill_index_at_line(&rows, 1), Some(0));
@@ -417,17 +419,35 @@ mod tests {
                 skills: vec![SkillEntry::new("x"), SkillEntry::new("y")],
             }],
         };
-        let rows = nav_rows(&scan);
+        let rows = nav_rows(&scan.groups);
         assert_eq!(total_lines(&rows), 1 + 2 + 2); // header + two 2-line cards
         assert_eq!(selected_line_range(&rows, 0), (1, 2)); // x starts at line 1
         assert_eq!(selected_line_range(&rows, 1), (3, 2)); // y starts at line 3
     }
 
+    /// Skill folder names in the named group of a scan, for terse assertions.
+    #[cfg(test)]
+    fn group_names(groups: &[SkillGroup], label: &str) -> Vec<String> {
+        groups
+            .iter()
+            .find(|g| g.label == label)
+            .map(|g| g.skills.iter().map(|s| s.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
     #[test]
     fn is_in_repo_checks_personal_and_vendor() {
         let repo = RepoScan {
-            personal: vec!["mine".to_string()],
-            vendor: vec!["pdf".to_string()],
+            groups: vec![
+                SkillGroup {
+                    label: "personal".to_string(),
+                    skills: vec![SkillEntry::new("mine")],
+                },
+                SkillGroup {
+                    label: "vendor".to_string(),
+                    skills: vec![SkillEntry::new("pdf")],
+                },
+            ],
         };
         assert!(is_in_repo(&repo, "mine"));
         assert!(is_in_repo(&repo, "pdf"));
@@ -440,15 +460,16 @@ mod tests {
         fs::create_dir_all(tmp.path().join("personal/my-skill")).unwrap();
         fs::create_dir_all(tmp.path().join("vendor/pdf-filling")).unwrap();
         let scan = scan_repo(&tmp.path().to_string_lossy());
-        assert_eq!(scan.personal, vec!["my-skill"]);
-        assert_eq!(scan.vendor, vec!["pdf-filling"]);
+        assert_eq!(group_names(&scan.groups, "personal"), vec!["my-skill"]);
+        assert_eq!(group_names(&scan.groups, "vendor"), vec!["pdf-filling"]);
     }
 
     #[test]
-    fn scan_repo_missing_dirs_are_empty() {
+    fn scan_repo_always_has_both_groups_even_when_empty() {
         let tmp = tempfile::tempdir().unwrap();
         let scan = scan_repo(&tmp.path().to_string_lossy());
-        assert!(scan.personal.is_empty());
-        assert!(scan.vendor.is_empty());
+        let labels: Vec<&str> = scan.groups.iter().map(|g| g.label.as_str()).collect();
+        assert_eq!(labels, vec!["personal", "vendor"]);
+        assert!(scan.groups.iter().all(|g| g.skills.is_empty()));
     }
 }

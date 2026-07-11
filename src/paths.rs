@@ -28,6 +28,12 @@ pub fn config_file() -> Option<PathBuf> {
     config_dir().map(|d| d.join("config.toml"))
 }
 
+/// `~/.config/skilloom/sync.toml` — the sync ledger (what's synced where).
+/// Kept beside `config.toml` in the config folder, separate from pure intent.
+pub fn ledger_file() -> Option<PathBuf> {
+    config_dir().map(|d| d.join("sync.toml"))
+}
+
 /// Expand a leading `~` or `~/…` to the home directory. Anything else is
 /// returned as-is.
 pub fn expand_tilde(input: &str) -> PathBuf {
