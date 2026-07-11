@@ -15,12 +15,12 @@ Small testable slices:
 - [x] Promote the card list + master-detail into a reusable widget — `app::NavState` + the shared `skills::nav_rows`/`NavRow` geometry and `ui::render_master_detail`; Global and Catalog are now two callers.
 - [x] Catalog tab: repo skills (`personal/` + `vendor/`) in that master-detail widget, with an "installed globally" status; a `sample-skill` is checked into loom-skills. Layout documented in [docs/guides/loom-skills-repo-layout.md](docs/guides/loom-skills-repo-layout.md).
 - [x] **First write path — sync repo → global.** Sync modal on Catalog (`s` / `[ Sync → ]`): copies to canonical `~/.agents/skills/<name>` + symlinks into detected agent dirs (default-on toggles), records in `~/.config/skilloom/sync.toml`. Project destination is a stub. [Workflow](docs/workflows/sync-a-skill-to-global.md).
-- [x] **Remove a global skill** — confirm modal on Global (`x` / `[ Remove ]`), symlink- and catalog-aware ("permanent" when not in the repo). [Workflow](docs/workflows/remove-a-global-skill.md).
+- [x] **Remove a global skill** — confirm modal on Global (`x` / `[ Remove ]`), symlink- and catalog-aware ("permanent" when not in the repo). Removing the canonical copy auto-cleans the symlinks that point at it. [Workflow](docs/workflows/remove-a-global-skill.md).
 - [x] Modal/overlay system + pending-op execution (pure input → `main` runs the fs op); footer status line.
 - [ ] Fill the "details" box with the `SKILL.md` body (both tabs).
 - [ ] Populate Projects from config + disk (the third `NavState` caller) → then wire Project as a real sync destination.
 - [ ] Add-remote flow (git repo → `vendor/<name>/` + `.skilloom.toml`).
-- [ ] Grow the ledger into change-detection: content/commit compare (repo vs. installed), and "remove everywhere" (canonical + its symlinks).
+- [ ] Grow the ledger into change-detection: content/commit compare (repo vs. installed) for a real `●↑▲↕` status.
 
 ## Planning phase (in progress)
 

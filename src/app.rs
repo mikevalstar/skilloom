@@ -238,6 +238,9 @@ pub struct RemoveModal {
     pub link_target: Option<String>,
     /// Whether it's tracked in the repo; if not, removal is permanent.
     pub in_catalog: bool,
+    /// If this is the canonical copy, the agent dirs whose symlinks to it will be
+    /// cleaned up too (display labels). Empty otherwise.
+    pub dependent_links: Vec<String>,
     pub focus: usize,
 }
 
@@ -595,6 +598,15 @@ impl App {
             .to_string_lossy()
             .into_owned();
         let in_catalog = skills::is_in_repo(&self.repo_scan, &name);
+        // Removing the canonical copy cascades to the symlinks that point at it.
+        let dependent_links = if location == format!("~/{}", sync::CANONICAL_DIR) {
+            sync::dependent_link_rels(&name)
+                .into_iter()
+                .map(|rel| format!("~/{rel}"))
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.overlay = Some(Overlay::Remove(RemoveModal {
             skill: name,
             location,
@@ -602,6 +614,7 @@ impl App {
             is_symlink: link_target.is_some(),
             link_target,
             in_catalog,
+            dependent_links,
             focus: 1, // default to Cancel — the safe choice for a destructive action
         }));
     }
@@ -732,15 +745,21 @@ impl App {
                     Err(e) => self.status = Some(format!("Sync failed: {e}")),
                 }
             }
-            PendingOp::RemoveGlobal { name, path } => match sync::remove_path(Path::new(&path)) {
-                Ok(()) => {
-                    self.ledger.forget(&name, ledger::GLOBAL);
-                    let _ = self.ledger.save();
-                    self.status = Some(format!("Removed '{name}'."));
-                    self.rescan();
+            PendingOp::RemoveGlobal { name, path } => {
+                match sync::remove_installed(&name, Path::new(&path)) {
+                    Ok(cleaned) => {
+                        self.ledger.forget(&name, ledger::GLOBAL);
+                        let _ = self.ledger.save();
+                        self.status = Some(if cleaned.is_empty() {
+                            format!("Removed '{name}'.")
+                        } else {
+                            format!("Removed '{name}' and {} symlink(s).", cleaned.len())
+                        });
+                        self.rescan();
+                    }
+                    Err(e) => self.status = Some(format!("Remove failed: {e}")),
                 }
-                Err(e) => self.status = Some(format!("Remove failed: {e}")),
-            },
+            }
         }
     }
 
@@ -1085,6 +1104,7 @@ mod tests {
             is_symlink: false,
             link_target: None,
             in_catalog: false,
+            dependent_links: Vec::new(),
             focus,
         };
         let mut confirm = main_app();

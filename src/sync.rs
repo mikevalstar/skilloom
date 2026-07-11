@@ -10,7 +10,7 @@
 //! `~/.cursor/skills`), mirroring how skills.sh fans a store out. Which dirs get
 //! the symlink is chosen per-sync (all detected ones, on by default).
 
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
@@ -110,6 +110,89 @@ pub fn link_skill(canonical: &Path, link: &Path) -> Result<()> {
             .with_context(|| format!("creating {}", parent.display()))?;
     }
     symlink_dir(canonical, link)
+}
+
+/// Remove an installed global skill entry at `path`. When `path` is the canonical
+/// store copy (`~/.agents/skills/<name>`), also remove any symlinks in the other
+/// agent dirs that point at it — otherwise they'd be left dangling. Returns the
+/// `$HOME`-relative dirs whose symlinks were cleaned up.
+pub fn remove_installed(name: &str, path: &Path) -> Result<Vec<String>> {
+    remove_installed_in(paths::home_dir().as_deref(), name, path)
+}
+
+fn remove_installed_in(home: Option<&Path>, name: &str, path: &Path) -> Result<Vec<String>> {
+    remove_path(path)?;
+    let mut cleaned = Vec::new();
+    if let Some(home) = home
+        && *path == home.join(CANONICAL_DIR).join(name)
+    {
+        // The link targets still resolve to the (now-removed) canonical path, so
+        // this finds exactly the symlinks we just orphaned.
+        for rel in dependent_link_rels_in(home, name) {
+            remove_path(&home.join(&rel).join(name))?;
+            cleaned.push(rel);
+        }
+    }
+    Ok(cleaned)
+}
+
+/// Agent dirs (`$HOME`-relative) holding a symlink `<name>` that points at the
+/// canonical copy — the links that removing the canonical would orphan.
+pub fn dependent_link_rels(name: &str) -> Vec<String> {
+    match paths::home_dir() {
+        Some(home) => dependent_link_rels_in(&home, name),
+        None => Vec::new(),
+    }
+}
+
+fn dependent_link_rels_in(home: &Path, name: &str) -> Vec<String> {
+    let canonical = home.join(CANONICAL_DIR).join(name);
+    link_target_rels()
+        .into_iter()
+        .filter(|rel| symlink_points_to(&home.join(rel).join(name), &canonical))
+        .map(|rel| rel.to_string())
+        .collect()
+}
+
+/// Whether `link` is a symlink that resolves to `target`. Handles **relative**
+/// link targets (skills.sh writes e.g. `../../.agents/skills/<name>`) by joining
+/// them onto the link's parent, and compares **lexically** (no fs canonicalize) —
+/// so it still matches after the target has been removed, and doesn't trip over
+/// `/var`↔`/private/var`-style symlinked path prefixes.
+fn symlink_points_to(link: &Path, target: &Path) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(link) else {
+        return false;
+    };
+    if !meta.file_type().is_symlink() {
+        return false;
+    }
+    let Ok(dest) = std::fs::read_link(link) else {
+        return false;
+    };
+    let abs = if dest.is_absolute() {
+        dest
+    } else {
+        match link.parent() {
+            Some(parent) => parent.join(dest),
+            None => dest,
+        }
+    };
+    lexical_normalize(&abs) == lexical_normalize(target)
+}
+
+/// Collapse `.` and `..` components without touching the filesystem.
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// Remove a file, directory, or symlink at `path`. A no-op if it doesn't exist.
@@ -273,5 +356,78 @@ mod tests {
     fn link_target_rels_excludes_the_canonical_store() {
         assert!(!link_target_rels().contains(&CANONICAL_DIR));
         assert!(link_target_rels().contains(&".claude/skills"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_the_canonical_cleans_up_its_symlinks() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let canonical = home.join(".agents/skills/x");
+        write(&canonical.join("SKILL.md"), "x");
+        // An absolute symlink to the canonical (skilloom's own style)…
+        fs::create_dir_all(home.join(".claude/skills")).unwrap();
+        symlink(&canonical, home.join(".claude/skills/x")).unwrap();
+        // …a relative symlink to it (skills.sh style)…
+        fs::create_dir_all(home.join(".cursor/skills")).unwrap();
+        symlink("../../.agents/skills/x", home.join(".cursor/skills/x")).unwrap();
+        // …and one pointing elsewhere (must be left alone).
+        let other = home.join("other");
+        write(&other.join("SKILL.md"), "y");
+        fs::create_dir_all(home.join(".codex/skills")).unwrap();
+        symlink(&other, home.join(".codex/skills/x")).unwrap();
+
+        let cleaned = remove_installed_in(Some(&home), "x", &canonical).unwrap();
+        assert_eq!(
+            cleaned,
+            vec![".claude/skills".to_string(), ".cursor/skills".to_string()]
+        );
+        assert!(!canonical.exists());
+        assert!(!home.join(".claude/skills/x").exists()); // absolute link cleaned
+        assert!(!home.join(".cursor/skills/x").exists()); // relative link cleaned
+        // The unrelated symlink survives.
+        assert!(
+            fs::symlink_metadata(home.join(".codex/skills/x"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_a_symlink_entry_does_not_touch_the_canonical() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let canonical = home.join(".agents/skills/x");
+        write(&canonical.join("SKILL.md"), "x");
+        fs::create_dir_all(home.join(".claude/skills")).unwrap();
+        let link = home.join(".claude/skills/x");
+        symlink(&canonical, &link).unwrap();
+
+        let cleaned = remove_installed_in(Some(&home), "x", &link).unwrap();
+        assert!(cleaned.is_empty());
+        assert!(!link.exists());
+        assert!(canonical.join("SKILL.md").is_file()); // canonical untouched
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dependent_link_rels_matches_relative_and_absolute_symlinks() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let canonical = home.join(".agents/skills/x");
+        write(&canonical.join("SKILL.md"), "x");
+        fs::create_dir_all(home.join(".claude/skills")).unwrap();
+        symlink("../../.agents/skills/x", home.join(".claude/skills/x")).unwrap(); // relative
+
+        assert_eq!(
+            dependent_link_rels_in(&home, "x"),
+            vec![".claude/skills".to_string()]
+        );
+        assert!(dependent_link_rels_in(&home, "absent").is_empty());
     }
 }

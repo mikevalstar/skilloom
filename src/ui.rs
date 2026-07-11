@@ -652,6 +652,16 @@ fn modal_view(area: Rect, overlay: &Overlay) -> ModalView {
                     Style::default().fg(Color::Red),
                 )));
             }
+            if !m.dependent_links.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "also removes {} symlink(s): {}",
+                        m.dependent_links.len(),
+                        m.dependent_links.join(", ")
+                    ),
+                    dim,
+                )));
+            }
             lines.push(Line::from(""));
             modal_item(
                 &mut lines,
@@ -919,5 +929,27 @@ mod tests {
         assert!(text.contains("Remove 'orphan'?"));
         assert!(text.contains("permanent")); // the not-in-catalog warning
         assert!(text.contains("[ Remove ]"));
+    }
+
+    #[test]
+    fn remove_modal_lists_dependent_symlinks_for_the_canonical() {
+        let mut app = app_with_global_skill();
+        press(&mut app, KeyCode::Char('3')); // Global
+        app.overlay = Some(crate::app::Overlay::Remove(crate::app::RemoveModal {
+            skill: "orphan".to_string(),
+            location: "~/.agents/skills".to_string(),
+            path: "/whatever/orphan".to_string(),
+            is_symlink: false,
+            link_target: None,
+            in_catalog: true,
+            dependent_links: vec![
+                "~/.claude/skills".to_string(),
+                "~/.codex/skills".to_string(),
+            ],
+            focus: 1,
+        }));
+        let text = draw(&mut app);
+        assert!(text.contains("also removes 2 symlink(s)"));
+        assert!(text.contains("~/.claude/skills"));
     }
 }
