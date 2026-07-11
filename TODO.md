@@ -25,5 +25,5 @@ Turn the model in [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md)
 
 ## Deferred / open
 
-- [ ] Choose and add a `LICENSE` (public repo; none asserted yet).
+- [x] Add MIT `LICENSE` and set `license = "MIT"` in `Cargo.toml`.
 - [ ] Confirm the loom-skills repo layout once the source/manifest spec exists (it currently holds only a README on purpose).

@@ -5,6 +5,7 @@ edition = "2024"
 description = "A TUI-first manager for AI agent skills — personal skills versioned in a git repo, third-party skills tracked from upstream, reconciled across agents and projects."
 repository = "https://github.com/mikevalstar/skilloom"
 readme = "README.md"
+license = "MIT"
 publish = false
 
 [[bin]]

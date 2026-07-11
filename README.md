@@ -53,3 +53,7 @@ This is a **documentation-first** project ([ADR-0001](docs/adrs/0001-documentati
 - [docs/features](docs/features/) — feature specs
 - [docs/workflows](docs/workflows/) — end-to-end flows the tool supports
 - [docs/guides](docs/guides/) — developer guides for this repo and the libraries it uses
+
+## License
+
+MIT — see [LICENSE](LICENSE).
