@@ -10,7 +10,7 @@ A TUI-first manager for AI agent skills.
 - **Curated & selective** — syncing is opt-in per skill per destination: a project-specific skill needn't flow up, a repo skill needn't land in every project.
 - **TUI-first, headless underneath** — an interactive terminal UI does the mutating; `skilloom … --json` gives scripts (and [myplace](https://github.com/mikevalstar/myplace)) a read-only status view. *(Diff-while-syncing, tags, search, and filtering come later.)*
 
-> 🚧 **Early.** First slice runs: the first-run setup screen (point at your loom-skills repo, with directory autocomplete) and the tabbed app shell — Dashboard / Projects / Global / Catalog + a settings gear — each tab a placeholder for now, navigable by keyboard and mouse. The sync engine and `--json` surface come next. Design lives in [docs/](docs/README.md); skilloom was spun out of myplace ([its ADR-0024](https://github.com/mikevalstar/myplace/blob/main/docs/adrs/0024-skills-management-as-separate-project.md)), with the intent re-homed in [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md).
+> 🚧 **Early — read-only so far.** Runs today: first-run setup (point at your loom-skills repo, with directory autocomplete) and a tabbed TUI (Dashboard / Projects / Global / Catalog + a settings gear), keyboard and mouse (incl. scroll wheel). The **Global** tab browses your installed skills grouped by agent dir — symlink-aware, showing each skill's `SKILL.md` description and whether it's tracked in the repo; **Catalog** lists the repo's skills. No *write*/sync path or `--json` surface yet — those come next. Design lives in [docs/](docs/README.md); skilloom was spun out of myplace ([its ADR-0024](https://github.com/mikevalstar/myplace/blob/main/docs/adrs/0024-skills-management-as-separate-project.md)), with the intent re-homed in [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md).
 
 ## Two repos
 
@@ -44,7 +44,7 @@ A draft plan — see the [functional overview](docs/features/overview.md) for th
 
 ## Stack
 
-Built with **Rust** and the **ratatui** stack — ratatui + crossterm + tokio + serde + clap — modeled on [herdr](https://github.com/ogulcancelik/herdr) ([ADR-0002](docs/adrs/0002-rust-and-ratatui-for-the-tui.md)). The engine is TUI-free so the `--json` surface (and any future integration) is free.
+Built with **Rust** and the **ratatui** stack, modeled on [herdr](https://github.com/ogulcancelik/herdr) ([ADR-0002](docs/adrs/0002-rust-and-ratatui-for-the-tui.md)). Current deps: `ratatui` + `crossterm`, `serde`/`toml`, `anyhow`; `tokio` and `clap` are deferred until network/git and the `--json`/CLI surface need them. The engine modules are TUI-free so that `--json` surface (and any future integration) stays cheap to add.
 
 ## Documentation
 

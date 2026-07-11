@@ -9,7 +9,7 @@ phase: 1
 
 # TUI — screens and interaction design
 
-> **Draft sketch.** Indicative mockups to agree the shape, not final layout — column math and exact widths get locked against the real terminal when implemented. The model these screens sit on is in [overview.md](overview.md); stack and layout rules in [ratatui-tui-stack.md](../guides/ratatui-tui-stack.md).
+> **Part built, part sketch.** **Built and current:** the first-run screen, the tab shell + settings gear, and the **Global** tab (its mockup below matches the code). **Still design intent:** the Dashboard, Projects, and Catalog mockups, the overlays (skill detail / add-remote / sync plan), and the full sync-status vocabulary — those are aspirational until the write/sync engine exists. The model these screens sit on is in [overview.md](overview.md); stack and layout rules in [ratatui-tui-stack.md](../guides/ratatui-tui-stack.md).
 
 ## Assumptions
 
@@ -35,7 +35,7 @@ The four tabs map onto the hub-and-spoke model: **Catalog** is the library (the 
 |-----|-----------|----------|
 | **Dashboard** | Overview: search + summary (updates available, sync roll-up, recent activity) | — (full-width) |
 | **Projects** | Your tracked projects; pick one to manage its skills | project list |
-| **Global** | Skills deployed to `~/.agents`/`~/.claude`, plus on-disk skills to import | filter sections |
+| **Global** | Installed skills, grouped by agent dir — browse (read-only today) | location groups |
 | **Catalog** | The whole loom-skills library (`personal/` + `vendor/`); browse, add remote, deploy | categories / sources |
 | **⚙ Settings** | Repo location, agent targets, sync options, about — reached via the gear (top-right) or `,` | settings sections |
 
@@ -54,7 +54,9 @@ Code blocks are monochrome, so state is carried by glyphs; each maps to a themed
 | `○` | available, not deployed to this destination | dim |
 | `✗` | source gone / broken | red |
 
-**Origin:** `personal` · `vendor:<src>`. **Deployed to:** `G` = global · project names · `—` = nowhere. **Selection:** `▸` marks the focused row/nav item.
+**Origin:** `personal` · `vendor:<src>`. **Deployed to:** `G` = global · project names · `—` = nowhere. **Selection:** `▸` marks the focused row/nav item. **Symlink:** a trailing `@` marks a skill that's a symlink; the detail shows its real target.
+
+> **Implemented today:** the Global tab uses only `●` (tracked in the repo) and `○` (not in the repo) — a folder-**name match**, a placeholder. The fuller vocabulary above (`↑`/`▲`/`↕`, "deployed to", origins) arrives with the sync ledger.
 
 ## Navigation
 
@@ -147,23 +149,27 @@ Left nav = tracked projects; content = the selected project's skills and actions
 
 `deploy-notes` lives only in the project (`↑`, "project-only") — curation guardrail: it stays put unless you explicitly `[ push to repo ]`. `rust-testing` is in the repo but not installed here → `[ install ]`.
 
-## Global tab
+## Global tab — **built, current**
 
-Left nav = filter sections; content = global skills and their status. `On disk` is the import surface (skills already in `~/.agents`/`~/.claude`, not yet in the repo).
+Master-detail. **Left nav:** installed skills grouped by agent dir (`~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`, `~/.cursor/skills`; empty dirs show `(none)`, missing dirs are skipped). Each skill is a **two-line card** — name on top with the symlink `@` floated right, the `SKILL.md` description below it (grayed, truncated). **Right pane:** a metadata **header card** (location, `links to <real path>` for symlinks, synced status) over a **details box** reserved for the `SKILL.md` body. The nav **scrolls** (scrollbar on overflow) to keep the selection visible. Select with `↑↓`/`j`/`k`, a click, or the scroll wheel. Read-only today — actions arrive with the sync engine.
 
 ```text
-┌ skilloom ─ Dashboard   Projects   [ Global ]   Catalog ─────────────────  ⚙ ┐
-│ GLOBAL            │ Global skills → ~/.agents · ~/.claude                   │
-│ ▸ Deployed · 8    │ ────────────────────────────────────────────────────── │
-│   Available · 12  │ ST  SKILL           SOURCE             ACTION           │
-│   On disk · 2     │ ●   commit-helper   repo:personal      in sync          │
-│                   │ ▲   rust-testing    repo:vendor x       [ sync ]         │
-│                   │ ↑   scratch-notes   on disk only        [ import ]       │
-│                   │                                                         │
-│                   │ [ sync global ]                                         │
-├ ↹ tab   ↑↓ nav   space select   s sync   i import   click   , settings  ? q ┤
+┌ skilloom ─ Dashboard  Projects  [ Global ]  Catalog ─────────────────────  ⚙ ┐
+│ Global ──────────────────────┐┌ herdr ─────────────────────────────────────┐│
+│ ~/.claude/skills             ││ location  ~/.claude/skills                  ││
+│ ▸ herdr                   @  ││ links to  ~/.agents/skills/herdr  (symlink) ││
+│   Control herdr from insid…  ││ status    ○ not synced (not in repo)        ││
+│   okq-explore             @  │└─────────────────────────────────────────────┘│
+│   Search and navigate an O…  │┌ details ────────────────────────────────────┐│
+│ ~/.agents/skills             ││ SKILL.md contents will show here.           ││
+│   herdr                      ││                                             ││
+│ ~/.codex/skills              ││                                             ││
+│   (none)                     ││                                             ││
+├ ↑↓ select · ↹ tab · f refresh · , settings · q quit ─────────────────────────┤
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Note: `herdr` appears under both `~/.claude` (a symlink, `@`) and `~/.agents` (the real dir, no `@`) — the symlink flag makes the duplication legible. Its `links to` line points at the real content.
 
 ## Catalog tab
 
@@ -292,7 +298,7 @@ Error (non-fatal; the action left things unchanged):
 
 Both are first-class (crossterm mouse capture; we hit-test regions).
 
-**Clickable:** top tabs, the gear, left-nav items, table rows (click = select, double-click = open detail), inline buttons (`[ sync ]`, `[ install ]`, `[ push to repo ]`, `+ add remote skill`). **Scroll wheel** scrolls the focused list/table.
+**Clickable (built):** top tabs, the gear, and Global left-nav skill cards (click = select). **Planned:** inline buttons (`[ sync ]`, `[ install ]`, `+ add remote skill`) and double-click-to-open-detail. **Scroll wheel (built):** moves the selection in the Global nav — the view follows, consistent with `↑↓`.
 
 **Global keys**
 
@@ -309,13 +315,17 @@ Both are first-class (crossterm mouse capture; we hit-test regions).
 
 **Context keys** (shown in each tab's footer): `↑↓`/`jk` nav · `⏎` open/detail · `space` select · `a` add remote (Catalog) · `i` import (Global) · `+` add project (Projects).
 
+> **Built today:** `↹` / `1`–`4` / `,` / `q` / `esc`, `↑↓` `j` `k`, `f` (rescan skills from disk), plus click and scroll wheel. **Planned:** `/` search, `s` sync, `⏎` overlays, `space` select, `a` / `i` / `+` — each arrives with the feature it drives.
+
 ## Open questions
 
 - **Narrow terminals** — collapse the left nav to icons / a drawer and stack the Dashboard cards below some width; deferred, but the layout should degrade rather than break.
 - **Deployed-to overflow** — when a skill is in many projects, the `DEPLOYED TO` column needs truncation (`G web-app +3`).
 - **Settings: page vs. overlay** — sketched as a page (tab-bar stays, gear highlighted). Could be a modal instead.
 - **Search scope** — skills only, or also projects/sources/activity (command-palette style)?
-- **Global fan-out mechanism** — canonical `~/.agents/skills` + symlinks vs. copy into each agent dir (configured under Settings › Agent targets); still open in [overview.md](overview.md).
+- **Global fan-out mechanism** — canonical `~/.agents/skills` + symlinks vs. copy into each agent dir. *Empirically the global dirs are already heavily symlinked:* skills.sh symlinks its `~/.agents/skills` store into `~/.claude/skills`, and the owner's `okq-*` skills symlink out to `~/projects/okq`. Open in [overview.md](overview.md).
+- **Symlinked skills on import/sync** — when a global skill is a symlink to elsewhere (a store or a project), does import copy the real content, skip it (already sourced there), or record the link? Needs deciding when import is built.
+- **What "synced" means** — the detail's status is a folder-name match against the repo today; real status needs content/commit comparison, with the ledger.
 
 ## Related
 

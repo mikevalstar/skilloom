@@ -117,9 +117,15 @@ The **ledger** (in state/config) answers "which skills go where" and drives the 
 
 **Follow-up:** once this model is locked, write a superseding ADR that records the mechanism change (repo-as-hub, copy-based, deferred diff) so ADR-0003's now-outdated storage details don't mislead. Not done yet — the model is still high-level.
 
+## What's built so far
+
+The read side of this model exists: the TUI's **Global** tab scans the agent dirs and browses installed skills (grouped by location, symlink-aware, with `SKILL.md` descriptions), and **Catalog** lists the repo's `personal/`+`vendor/`. No *write* path yet — add-remote, import, and all sync directions above are still to come. UI detail: [tui-dashboard.md](tui-dashboard.md).
+
 ## Open questions
 
-- **Global mechanism:** one canonical `~/.agents/skills` + symlinks into `~/.claude/skills` (skills.sh-style), or a plain copy into each agent dir?
+- **Global mechanism:** one canonical `~/.agents/skills` + symlinks into `~/.claude/skills` (skills.sh-style), or a plain copy into each agent dir? *Observed in practice:* the global dirs are already heavily symlinked — skills.sh symlinks its `~/.agents/skills` store into `~/.claude/skills`, and the owner's `okq-*` skills symlink out to `~/projects/okq`. So skilloom must at least *read through* symlinks (done) and decide how it *writes* around them.
+- **Symlinked skills on import:** when a global skill is a symlink to elsewhere (a store, or a project checkout), does importing it into the repo copy the real content, skip it (it's already sourced there), or record a reference? Decide when import is built.
+- **What "synced" means:** the Global detail shows a folder-**name** match against the repo today (a placeholder). Real status needs content/commit comparison — feeds the ledger and the eventual diff. See *change detection*.
 - **Curation portability:** does the which-goes-where mapping live only in `~/.config` (machine-local) or also committed in the repo (portable across machines)?
 - **Change detection:** with no pinned base, how is "one side is newer" computed for status — content hash, git history of the repo, mtime? (Feeds the phase-3 ledger and the eventual diff view.)
 - **Vendor granularity:** a remote repo may contain many skills — do we vendor whole repos or individual skill folders? (Leaning: individual folders, each with its own `.skilloom.toml`.)
