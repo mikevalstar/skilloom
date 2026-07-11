@@ -277,17 +277,26 @@ impl App {
         }
     }
 
-    /// Left-click support on the main screen: click a tab or the gear.
+    /// Mouse support on the main screen: the wheel scrolls the Global nav (by
+    /// moving the selection, which the view follows); left-click hits tabs, the
+    /// gear, or a skill row.
     pub fn on_mouse(&mut self, event: MouseEvent, area: Rect) {
         if !matches!(self.screen, Screen::Main(_)) {
             return;
         }
-        if event.kind != MouseEventKind::Down(MouseButton::Left) {
-            return;
+        match event.kind {
+            MouseEventKind::ScrollDown => self.global_select_next(),
+            MouseEventKind::ScrollUp => self.global_select_prev(),
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.on_left_click(event.column, event.row, area)
+            }
+            _ => {}
         }
+    }
+
+    fn on_left_click(&mut self, col: u16, row: u16, area: Rect) {
         let regions = ui::regions(area);
         let (tabs, gear) = ui::tab_spans(regions.tabbar);
-        let (col, row) = (event.column, event.row);
 
         if let Some(gear_rect) = gear
             && contains(gear_rect, col, row)
@@ -424,6 +433,28 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    fn wheel(kind: MouseEventKind) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    fn skills_of(names: &[&str]) -> App {
+        let mut app = main_app();
+        app.global = skills::GlobalScan {
+            groups: vec![skills::SkillGroup {
+                label: "L".to_string(),
+                skills: names.iter().map(|n| skills::SkillEntry::new(*n)).collect(),
+            }],
+        };
+        app.global_rows = skills::nav_rows(&app.global);
+        app.global_sel = 0;
+        app
+    }
+
     fn main_app() -> App {
         App::new(Config {
             repo_path: Some("/somewhere".to_string()),
@@ -503,19 +534,7 @@ mod tests {
 
     #[test]
     fn global_selection_moves_only_on_global_tab() {
-        let mut app = main_app();
-        app.global = skills::GlobalScan {
-            groups: vec![skills::SkillGroup {
-                label: "L".to_string(),
-                skills: vec![
-                    skills::SkillEntry::new("a"),
-                    skills::SkillEntry::new("b"),
-                    skills::SkillEntry::new("c"),
-                ],
-            }],
-        };
-        app.global_rows = skills::nav_rows(&app.global);
-        app.global_sel = 0;
+        let mut app = skills_of(&["a", "b", "c"]);
 
         // On Dashboard, arrow keys are a no-op for the Global selection.
         app.on_key(key(KeyCode::Down));
@@ -529,6 +548,26 @@ mod tests {
         app.on_key(key(KeyCode::Down)); // clamps at the end
         assert_eq!(app.global_sel, 2);
         app.on_key(key(KeyCode::Up));
+        assert_eq!(app.global_sel, 1);
+    }
+
+    #[test]
+    fn scroll_wheel_moves_selection_on_global_tab() {
+        let mut app = skills_of(&["a", "b", "c"]);
+        let area = Rect::new(0, 0, 100, 24);
+
+        // Off the Global tab, the wheel does nothing.
+        app.on_mouse(wheel(MouseEventKind::ScrollDown), area);
+        assert_eq!(app.global_sel, 0);
+
+        app.on_key(key(KeyCode::Char('3'))); // Global
+        app.on_mouse(wheel(MouseEventKind::ScrollDown), area);
+        assert_eq!(app.global_sel, 1);
+        app.on_mouse(wheel(MouseEventKind::ScrollDown), area);
+        assert_eq!(app.global_sel, 2);
+        app.on_mouse(wheel(MouseEventKind::ScrollDown), area); // clamps
+        assert_eq!(app.global_sel, 2);
+        app.on_mouse(wheel(MouseEventKind::ScrollUp), area);
         assert_eq!(app.global_sel, 1);
     }
 
