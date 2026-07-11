@@ -198,7 +198,12 @@ fn render_global_nav(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: u
                 "  (none)",
                 Style::default().fg(Color::DarkGray),
             ))),
-            NavRow::Skill { index, name, .. } => {
+            NavRow::Skill {
+                index,
+                name,
+                link_target,
+                ..
+            } => {
                 let is_sel = *index == selected;
                 let style = if is_sel {
                     Style::default().fg(Color::Black).bg(Color::Cyan)
@@ -206,7 +211,12 @@ fn render_global_nav(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: u
                     Style::default()
                 };
                 let marker = if is_sel { "▸ " } else { "  " };
-                lines.push(Line::from(Span::styled(format!("{marker}{name}"), style)));
+                // `@` flags a symlink (ls convention); the target is in the detail pane.
+                let link = if link_target.is_some() { " @" } else { "" };
+                lines.push(Line::from(Span::styled(
+                    format!("{marker}{name}{link}"),
+                    style,
+                )));
             }
         }
     }
@@ -221,7 +231,12 @@ fn render_global_detail(
     repo: &RepoScan,
 ) {
     let (title, body): (String, Vec<Line<'static>>) = match skills::skill_at(rows, selected) {
-        Some(NavRow::Skill { name, location, .. }) => {
+        Some(NavRow::Skill {
+            name,
+            location,
+            link_target,
+            ..
+        }) => {
             let status = if skills::is_in_repo(repo, name) {
                 Span::styled("● synced (in repo)", Style::default().fg(Color::Green))
             } else {
@@ -230,7 +245,7 @@ fn render_global_detail(
                     Style::default().fg(Color::Yellow),
                 )
             };
-            let body = vec![
+            let mut body = vec![
                 Line::from(Span::styled(
                     name.clone(),
                     Style::default().add_modifier(Modifier::BOLD),
@@ -240,11 +255,18 @@ fn render_global_detail(
                     Span::styled("location  ", Style::default().fg(Color::DarkGray)),
                     Span::raw(location.clone()),
                 ]),
-                Line::from(vec![
-                    Span::styled("status    ", Style::default().fg(Color::DarkGray)),
-                    status,
-                ]),
             ];
+            if let Some(target) = link_target {
+                body.push(Line::from(vec![
+                    Span::styled("links to  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(target.clone(), Style::default().fg(Color::Cyan)),
+                    Span::styled("  (symlink)", Style::default().fg(Color::DarkGray)),
+                ]));
+            }
+            body.push(Line::from(vec![
+                Span::styled("status    ", Style::default().fg(Color::DarkGray)),
+                status,
+            ]));
             (format!(" {name} "), body)
         }
         _ => (
@@ -366,7 +388,7 @@ mod tests {
     use super::*;
     use crate::app::App;
     use crate::config::Config;
-    use crate::skills::{GlobalScan, RepoScan, SkillGroup};
+    use crate::skills::{GlobalScan, RepoScan, SkillEntry, SkillGroup};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -413,17 +435,26 @@ mod tests {
         app.global = GlobalScan {
             groups: vec![SkillGroup {
                 label: "~/.claude/skills".to_string(),
-                skills: vec!["herdr".to_string(), "okq".to_string()],
+                skills: vec![
+                    SkillEntry {
+                        name: "herdr".to_string(),
+                        link_target: Some("~/.agents/skills/herdr".to_string()),
+                    },
+                    SkillEntry::new("okq"),
+                ],
             }],
         };
         app.global_rows = crate::skills::nav_rows(&app.global);
         app.repo = RepoScan::default();
-        app.global_sel = 0;
+        app.global_sel = 0; // herdr, the symlink
         press(&mut app, KeyCode::Char('3')); // Global
         let text = draw(&app);
         assert!(text.contains("~/.claude/skills")); // group header in the nav
         assert!(text.contains("herdr")); // nav item
-        assert!(text.contains("not synced")); // detail for the selected skill (repo empty)
+        assert!(text.contains('@')); // symlink indicator in the nav
+        assert!(text.contains("links to")); // detail shows the real location
+        assert!(text.contains("~/.agents/skills/herdr")); // the symlink target
+        assert!(text.contains("not synced")); // detail status (repo empty)
     }
 
     #[test]

@@ -497,7 +497,11 @@ mod tests {
         app.global = skills::GlobalScan {
             groups: vec![skills::SkillGroup {
                 label: "L".to_string(),
-                skills: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+                skills: vec![
+                    skills::SkillEntry::new("a"),
+                    skills::SkillEntry::new("b"),
+                    skills::SkillEntry::new("c"),
+                ],
             }],
         };
         app.global_rows = skills::nav_rows(&app.global);

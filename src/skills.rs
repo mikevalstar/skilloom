@@ -4,8 +4,9 @@
 //! tool-agnostic `~/.agents` store, Codex, Cursor) and the loom-skills repo
 //! (`personal/` + `vendor/`). Global skills are kept **grouped by location** so
 //! the UI can show a left nav; [`nav_rows`] flattens those groups into
-//! renderable/selectable rows. A "skill" is just a subdirectory here; reading
-//! `SKILL.md` and richer metadata comes later.
+//! renderable/selectable rows. Entries that are **symlinks** (e.g. skills.sh
+//! symlinks `~/.agents/skills/<x>` into `~/.claude/skills/`) carry their real
+//! target so the UI can flag them and show where the files actually live.
 
 use std::path::Path;
 
@@ -21,13 +22,31 @@ pub const GLOBAL_SKILL_DIRS: &[&str] = &[
     ".cursor/skills",
 ];
 
+/// One installed skill: its folder name and, if it's a symlink, the real path
+/// it resolves to (home-abbreviated).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SkillEntry {
+    pub name: String,
+    pub link_target: Option<String>,
+}
+
+#[cfg(test)]
+impl SkillEntry {
+    pub fn new(name: impl Into<String>) -> Self {
+        SkillEntry {
+            name: name.into(),
+            link_target: None,
+        }
+    }
+}
+
 /// Skills found in one location (a single agent dir).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SkillGroup {
     /// Display label, e.g. `"~/.claude/skills"`.
     pub label: String,
-    /// Skill folder names in this location, sorted.
-    pub skills: Vec<String>,
+    /// Skill entries in this location, sorted by name.
+    pub skills: Vec<SkillEntry>,
 }
 
 /// Skills across the global agent dirs, grouped by location (existing dirs only).
@@ -44,7 +63,7 @@ pub struct RepoScan {
 }
 
 /// A row in the grouped left-nav: a location header, an empty-group marker, or a
-/// selectable skill carrying its flat selection index.
+/// selectable skill carrying its flat selection index and symlink target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NavRow {
     Header(String),
@@ -53,6 +72,7 @@ pub enum NavRow {
         index: usize,
         name: String,
         location: String,
+        link_target: Option<String>,
     },
 }
 
@@ -73,6 +93,47 @@ pub fn subdirs(dir: &Path) -> Vec<String> {
     names
 }
 
+/// Skill entries (dirs, incl. symlinked dirs) in `dir`, sorted, with symlink
+/// targets resolved. Hidden entries skipped.
+pub fn list_skill_entries(dir: &Path) -> Vec<SkillEntry> {
+    let mut entries = Vec::new();
+    if let Ok(read) = std::fs::read_dir(dir) {
+        for entry in read.flatten() {
+            let path = entry.path();
+            // `is_dir` follows symlinks, so a symlink-to-dir still counts.
+            if !path.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let is_symlink = entry.file_type().map(|t| t.is_symlink()).unwrap_or(false);
+            let link_target = if is_symlink {
+                std::fs::canonicalize(&path)
+                    .ok()
+                    .or_else(|| std::fs::read_link(&path).ok())
+                    .map(|real| abbreviate_home(&real))
+            } else {
+                None
+            };
+            entries.push(SkillEntry { name, link_target });
+        }
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
+}
+
+/// Replace a leading `$HOME` with `~` for display.
+fn abbreviate_home(path: &Path) -> String {
+    if let Some(home) = paths::home_dir()
+        && let Ok(rest) = path.strip_prefix(&home)
+    {
+        return format!("~/{}", rest.display());
+    }
+    path.display().to_string()
+}
+
 /// Scan the known global agent skill dirs under `$HOME`, grouped by location.
 pub fn scan_global() -> GlobalScan {
     let Some(home) = paths::home_dir() else {
@@ -84,7 +145,7 @@ pub fn scan_global() -> GlobalScan {
         if dir.is_dir() {
             groups.push(SkillGroup {
                 label: format!("~/{rel}"),
-                skills: subdirs(&dir),
+                skills: list_skill_entries(&dir),
             });
         }
     }
@@ -109,11 +170,12 @@ pub fn nav_rows(scan: &GlobalScan) -> Vec<NavRow> {
         if group.skills.is_empty() {
             rows.push(NavRow::Empty);
         } else {
-            for name in &group.skills {
+            for entry in &group.skills {
                 rows.push(NavRow::Skill {
                     index,
-                    name: name.clone(),
+                    name: entry.name.clone(),
                     location: group.label.clone(),
+                    link_target: entry.link_target.clone(),
                 });
                 index += 1;
             }
@@ -155,13 +217,37 @@ mod tests {
         assert_eq!(subdirs(tmp.path()), vec!["a-skill", "b-skill"]);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn list_skill_entries_flags_symlinks_with_target() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real-skill");
+        fs::create_dir(&real).unwrap();
+        let store = tmp.path().join("store");
+        fs::create_dir(&store).unwrap();
+        symlink(&real, store.join("linked")).unwrap();
+        fs::create_dir(store.join("plain")).unwrap();
+
+        let entries = list_skill_entries(&store);
+        let linked = entries.iter().find(|e| e.name == "linked").unwrap();
+        let plain = entries.iter().find(|e| e.name == "plain").unwrap();
+        assert!(plain.link_target.is_none());
+        assert!(
+            linked
+                .link_target
+                .as_ref()
+                .is_some_and(|t| t.contains("real-skill"))
+        );
+    }
+
     #[test]
     fn nav_rows_number_skills_and_mark_empty_groups() {
         let scan = GlobalScan {
             groups: vec![
                 SkillGroup {
                     label: "A".to_string(),
-                    skills: vec!["x".to_string(), "y".to_string()],
+                    skills: vec![SkillEntry::new("x"), SkillEntry::new("y")],
                 },
                 SkillGroup {
                     label: "B".to_string(),
@@ -169,7 +255,7 @@ mod tests {
                 },
                 SkillGroup {
                     label: "C".to_string(),
-                    skills: vec!["z".to_string()],
+                    skills: vec![SkillEntry::new("z")],
                 },
             ],
         };
