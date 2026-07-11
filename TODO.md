@@ -8,11 +8,13 @@ Small testable slices:
 
 - [x] First-run setup screen — repo path field with directory autocomplete; saves `~/.config/skilloom/config.toml`.
 - [x] Tabbed app shell — Dashboard / Projects / Global / Catalog + settings gear; keyboard (`↹`/`1-4`/`,`) and mouse (click tabs) nav; placeholder per tab.
-- [x] Global tab: left-nav grouped by location (`~/.claude`/`.agents`/`.codex`/`.cursor`), keyboard + mouse select a skill → detail pane; detail shows synced status (in repo or not). `f` rescans.
+- [x] Global tab: left-nav grouped by location (`~/.claude`/`.agents`/`.codex`/`.cursor`), keyboard + mouse select a skill → detail; synced status (in repo or not). `f` rescans.
+- [x] Symlink-aware: flag symlinked skills (`@`) and show their real target.
+- [x] Two-line skill cards (name + `SKILL.md` description subtitle, `@` floated right); right pane is a metadata header card with a "details" box below.
 - [x] Catalog tab: list repo skills from `vendor/` + `personal/` (empty until skills are added).
-- [ ] Show richer per-skill detail (read `SKILL.md` name/description, not just folder).
-- [ ] Give Catalog the same left-nav master-detail treatment.
-- [ ] Long lists: scroll the left nav when it overflows.
+- [ ] Fill the "details" box with the `SKILL.md` body.
+- [ ] Long lists: scroll the left nav when it overflows (cards make this sooner).
+- [ ] Give Catalog the same card/master-detail treatment.
 - [ ] Populate Projects from config + disk.
 - [ ] Add-remote flow (git repo → `vendor/<name>/` + `.skilloom.toml`).
 - [ ] The sync engine + ledger (see specs below).

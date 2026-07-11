@@ -178,6 +178,8 @@ fn render_global_nav(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: u
     let block = Block::default().borders(Borders::ALL).title(" Global ");
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    let width = inner.width as usize;
+    let sel_bg = Style::default().fg(Color::Black).bg(Color::Cyan);
 
     let mut lines: Vec<Line<'static>> = Vec::new();
     if rows.is_empty() {
@@ -202,21 +204,32 @@ fn render_global_nav(frame: &mut Frame, area: Rect, rows: &[NavRow], selected: u
                 index,
                 name,
                 link_target,
+                description,
                 ..
             } => {
                 let is_sel = *index == selected;
-                let style = if is_sel {
-                    Style::default().fg(Color::Black).bg(Color::Cyan)
+                // Card line 1: "▸ name" with the symlink `@` floated to the right.
+                let marker = if is_sel { "▸ " } else { "  " };
+                let flag = if link_target.is_some() { "@" } else { "" };
+                let head = float_right(&format!("{marker}{name}"), flag, width);
+                let head_style = if is_sel {
+                    sel_bg.add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
                 };
-                let marker = if is_sel { "▸ " } else { "  " };
-                // `@` flags a symlink (ls convention); the target is in the detail pane.
-                let link = if link_target.is_some() { " @" } else { "" };
-                lines.push(Line::from(Span::styled(
-                    format!("{marker}{name}{link}"),
-                    style,
-                )));
+                lines.push(Line::from(Span::styled(head, head_style)));
+                // Card line 2: the SKILL.md description, grayed and truncated.
+                let sub_text = description.as_deref().unwrap_or("—");
+                let sub = pad_to(
+                    &format!("  {}", truncate_chars(sub_text, width.saturating_sub(2))),
+                    width,
+                );
+                let sub_style = if is_sel {
+                    sel_bg
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                lines.push(Line::from(Span::styled(sub, sub_style)));
             }
         }
     }
@@ -230,55 +243,100 @@ fn render_global_detail(
     selected: usize,
     repo: &RepoScan,
 ) {
-    let (title, body): (String, Vec<Line<'static>>) = match skills::skill_at(rows, selected) {
-        Some(NavRow::Skill {
-            name,
-            location,
-            link_target,
-            ..
-        }) => {
-            let status = if skills::is_in_repo(repo, name) {
-                Span::styled("● synced (in repo)", Style::default().fg(Color::Green))
-            } else {
-                Span::styled(
-                    "○ not synced (not in repo)",
-                    Style::default().fg(Color::Yellow),
-                )
-            };
-            let mut body = vec![
-                Line::from(Span::styled(
-                    name.clone(),
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("location  ", Style::default().fg(Color::DarkGray)),
-                    Span::raw(location.clone()),
-                ]),
-            ];
-            if let Some(target) = link_target {
-                body.push(Line::from(vec![
-                    Span::styled("links to  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(target.clone(), Style::default().fg(Color::Cyan)),
-                    Span::styled("  (symlink)", Style::default().fg(Color::DarkGray)),
-                ]));
-            }
-            body.push(Line::from(vec![
-                Span::styled("status    ", Style::default().fg(Color::DarkGray)),
-                status,
-            ]));
-            (format!(" {name} "), body)
-        }
-        _ => (
-            " skill ".to_string(),
-            vec![Line::from(Span::styled(
-                "No skill selected.",
-                Style::default().fg(Color::DarkGray),
-            ))],
-        ),
+    let Some(NavRow::Skill {
+        name,
+        location,
+        link_target,
+        ..
+    }) = skills::skill_at(rows, selected)
+    else {
+        let block = Block::default().borders(Borders::ALL).title(" skill ");
+        let empty = Paragraph::new(Line::from(Span::styled(
+            "No skill selected.",
+            Style::default().fg(Color::DarkGray),
+        )))
+        .block(block);
+        frame.render_widget(empty, area);
+        return;
     };
-    let block = Block::default().borders(Borders::ALL).title(title);
-    frame.render_widget(Paragraph::new(body).block(block), area);
+
+    // Header card: the selected skill's metadata.
+    let status = if skills::is_in_repo(repo, name) {
+        Span::styled("● synced (in repo)", Style::default().fg(Color::Green))
+    } else {
+        Span::styled(
+            "○ not synced (not in repo)",
+            Style::default().fg(Color::Yellow),
+        )
+    };
+    let mut meta: Vec<Line<'static>> = vec![Line::from(vec![
+        Span::styled("location  ", Style::default().fg(Color::DarkGray)),
+        Span::raw(location.clone()),
+    ])];
+    if let Some(target) = link_target {
+        meta.push(Line::from(vec![
+            Span::styled("links to  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(target.clone(), Style::default().fg(Color::Cyan)),
+            Span::styled("  (symlink)", Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+    meta.push(Line::from(vec![
+        Span::styled("status    ", Style::default().fg(Color::DarkGray)),
+        status,
+    ]));
+
+    let card_h = (meta.len() as u16 + 2).min(area.height);
+    let card = Rect::new(area.x, area.y, area.width, card_h);
+    let card_block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {name} "));
+    frame.render_widget(Paragraph::new(meta).block(card_block), card);
+
+    // Room below the header card for full details, later.
+    let below_y = area.y + card_h;
+    let below_h = (area.y + area.height).saturating_sub(below_y);
+    if below_h > 0 {
+        let below = Rect::new(area.x, below_y, area.width, below_h);
+        let block = Block::default().borders(Borders::ALL).title(" details ");
+        let placeholder = Paragraph::new(Line::from(Span::styled(
+            "SKILL.md contents will show here.",
+            Style::default().fg(Color::DarkGray),
+        )))
+        .block(block);
+        frame.render_widget(placeholder, below);
+    }
+}
+
+/// Truncate the string to at most `width` characters (spaces added if shorter).
+fn pad_to(s: &str, width: usize) -> String {
+    let len = s.chars().count();
+    if len >= width {
+        s.chars().take(width).collect()
+    } else {
+        format!("{s}{}", " ".repeat(width - len))
+    }
+}
+
+/// Truncate to `max` chars, adding an ellipsis when it doesn't fit.
+fn truncate_chars(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max {
+        s.to_string()
+    } else if max == 0 {
+        String::new()
+    } else {
+        let head: String = s.chars().take(max - 1).collect();
+        format!("{head}…")
+    }
+}
+
+/// `left` padded so `right` sits flush against the right edge of `width`.
+fn float_right(left: &str, right: &str, width: usize) -> String {
+    let rlen = right.chars().count();
+    let avail = width.saturating_sub(rlen);
+    let left: String = left.chars().take(avail).collect();
+    let pad = width.saturating_sub(left.chars().count() + rlen);
+    format!("{left}{}{right}", " ".repeat(pad))
 }
 
 fn render_catalog(frame: &mut Frame, area: Rect, config: &Config, repo: &RepoScan) {
@@ -439,6 +497,7 @@ mod tests {
                     SkillEntry {
                         name: "herdr".to_string(),
                         link_target: Some("~/.agents/skills/herdr".to_string()),
+                        description: Some("Control herdr from inside it".to_string()),
                     },
                     SkillEntry::new("okq"),
                 ],
@@ -450,11 +509,13 @@ mod tests {
         press(&mut app, KeyCode::Char('3')); // Global
         let text = draw(&app);
         assert!(text.contains("~/.claude/skills")); // group header in the nav
-        assert!(text.contains("herdr")); // nav item
+        assert!(text.contains("herdr")); // card name
+        assert!(text.contains("Control herdr from inside it")); // card subtitle (description)
         assert!(text.contains('@')); // symlink indicator in the nav
-        assert!(text.contains("links to")); // detail shows the real location
+        assert!(text.contains("links to")); // header card shows the real location
         assert!(text.contains("~/.agents/skills/herdr")); // the symlink target
-        assert!(text.contains("not synced")); // detail status (repo empty)
+        assert!(text.contains("not synced")); // header card status (repo empty)
+        assert!(text.contains("details")); // the details box below the header card
     }
 
     #[test]

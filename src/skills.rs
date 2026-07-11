@@ -1,12 +1,13 @@
-//! Discovering installed skills on disk — by folder name, for now.
+//! Discovering installed skills on disk — folder name plus a bit of metadata.
 //!
 //! Two sources: the global agent dirs under `$HOME` (Claude Code, the
 //! tool-agnostic `~/.agents` store, Codex, Cursor) and the loom-skills repo
 //! (`personal/` + `vendor/`). Global skills are kept **grouped by location** so
 //! the UI can show a left nav; [`nav_rows`] flattens those groups into
-//! renderable/selectable rows. Entries that are **symlinks** (e.g. skills.sh
-//! symlinks `~/.agents/skills/<x>` into `~/.claude/skills/`) carry their real
-//! target so the UI can flag them and show where the files actually live.
+//! selectable rows. Each entry carries its symlink target (if any) and the
+//! `description` parsed from its `SKILL.md` frontmatter, so the UI can render a
+//! two-line card. In the nav a skill occupies two visual lines; the height math
+//! ([`nav_row_height`], [`skill_index_at_line`]) is shared with click hit-testing.
 
 use std::path::Path;
 
@@ -22,12 +23,13 @@ pub const GLOBAL_SKILL_DIRS: &[&str] = &[
     ".cursor/skills",
 ];
 
-/// One installed skill: its folder name and, if it's a symlink, the real path
-/// it resolves to (home-abbreviated).
+/// One installed skill: its folder name, symlink target (if any, home-abbreviated),
+/// and the `description` from its `SKILL.md` frontmatter.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SkillEntry {
     pub name: String,
     pub link_target: Option<String>,
+    pub description: Option<String>,
 }
 
 #[cfg(test)]
@@ -36,6 +38,7 @@ impl SkillEntry {
         SkillEntry {
             name: name.into(),
             link_target: None,
+            description: None,
         }
     }
 }
@@ -63,7 +66,7 @@ pub struct RepoScan {
 }
 
 /// A row in the grouped left-nav: a location header, an empty-group marker, or a
-/// selectable skill carrying its flat selection index and symlink target.
+/// selectable skill carrying everything the card needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NavRow {
     Header(String),
@@ -73,6 +76,7 @@ pub enum NavRow {
         name: String,
         location: String,
         link_target: Option<String>,
+        description: Option<String>,
     },
 }
 
@@ -94,7 +98,7 @@ pub fn subdirs(dir: &Path) -> Vec<String> {
 }
 
 /// Skill entries (dirs, incl. symlinked dirs) in `dir`, sorted, with symlink
-/// targets resolved. Hidden entries skipped.
+/// targets resolved and `SKILL.md` descriptions parsed. Hidden entries skipped.
 pub fn list_skill_entries(dir: &Path) -> Vec<SkillEntry> {
     let mut entries = Vec::new();
     if let Ok(read) = std::fs::read_dir(dir) {
@@ -117,7 +121,11 @@ pub fn list_skill_entries(dir: &Path) -> Vec<SkillEntry> {
             } else {
                 None
             };
-            entries.push(SkillEntry { name, link_target });
+            entries.push(SkillEntry {
+                name,
+                link_target,
+                description: read_description(&path),
+            });
         }
     }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
@@ -132,6 +140,48 @@ fn abbreviate_home(path: &Path) -> String {
         return format!("~/{}", rest.display());
     }
     path.display().to_string()
+}
+
+/// The `description` from a skill's `SKILL.md` YAML frontmatter, if present.
+fn read_description(skill_dir: &Path) -> Option<String> {
+    let md = std::fs::read_to_string(skill_dir.join("SKILL.md")).ok()?;
+    frontmatter_value(&md, "description")
+}
+
+/// Pull a single-line `key: value` out of the leading `---` frontmatter block.
+fn frontmatter_value(md: &str, key: &str) -> Option<String> {
+    let mut lines = md.lines();
+    if lines.next()?.trim() != "---" {
+        return None;
+    }
+    for line in lines {
+        if line.trim() == "---" {
+            break;
+        }
+        if let Some((k, v)) = line.split_once(':')
+            && k.trim() == key
+        {
+            let value = unquote(v.trim());
+            // Skip empties and YAML block-scalar markers we don't parse.
+            if value.is_empty() || value == ">" || value == "|" {
+                return None;
+            }
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Strip a single pair of surrounding single or double quotes.
+fn unquote(s: &str) -> String {
+    let chars: Vec<char> = s.trim().chars().collect();
+    if chars.len() >= 2 {
+        let (first, last) = (chars[0], chars[chars.len() - 1]);
+        if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+            return chars[1..chars.len() - 1].iter().collect();
+        }
+    }
+    chars.into_iter().collect()
 }
 
 /// Scan the known global agent skill dirs under `$HOME`, grouped by location.
@@ -176,12 +226,37 @@ pub fn nav_rows(scan: &GlobalScan) -> Vec<NavRow> {
                     name: entry.name.clone(),
                     location: group.label.clone(),
                     link_target: entry.link_target.clone(),
+                    description: entry.description.clone(),
                 });
                 index += 1;
             }
         }
     }
     rows
+}
+
+/// Visual height of a nav row: skills are two-line cards, everything else one.
+pub fn nav_row_height(row: &NavRow) -> usize {
+    match row {
+        NavRow::Skill { .. } => 2,
+        _ => 1,
+    }
+}
+
+/// The selectable skill index at visual line offset `line` in the nav, if any.
+pub fn skill_index_at_line(rows: &[NavRow], line: usize) -> Option<usize> {
+    let mut y = 0;
+    for row in rows {
+        let h = nav_row_height(row);
+        if line >= y && line < y + h {
+            return match row {
+                NavRow::Skill { index, .. } => Some(*index),
+                _ => None,
+            };
+        }
+        y += h;
+    }
+    None
 }
 
 /// Number of selectable skills across the nav rows.
@@ -242,6 +317,32 @@ mod tests {
     }
 
     #[test]
+    fn list_skill_entries_reads_description() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill = tmp.path().join("mine");
+        fs::create_dir(&skill).unwrap();
+        fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: mine\ndescription: A tiny skill\n---\n# Body\n",
+        )
+        .unwrap();
+        let entries = list_skill_entries(tmp.path());
+        let mine = entries.iter().find(|e| e.name == "mine").unwrap();
+        assert_eq!(mine.description.as_deref(), Some("A tiny skill"));
+    }
+
+    #[test]
+    fn frontmatter_reads_quoted_and_plain_values() {
+        let md = "---\nname: herdr\ndescription: \"Control herdr from inside it.\"\n---\n# Body\n";
+        assert_eq!(
+            frontmatter_value(md, "description").as_deref(),
+            Some("Control herdr from inside it.")
+        );
+        assert_eq!(frontmatter_value(md, "name").as_deref(), Some("herdr"));
+        assert_eq!(frontmatter_value("no frontmatter here", "name"), None);
+    }
+
+    #[test]
     fn nav_rows_number_skills_and_mark_empty_groups() {
         let scan = GlobalScan {
             groups: vec![
@@ -261,7 +362,6 @@ mod tests {
         };
         let rows = nav_rows(&scan);
         assert_eq!(skill_count(&rows), 3);
-        // Header(A), Skill0(x), Skill1(y), Header(B), Empty, Header(C), Skill2(z)
         assert!(matches!(&rows[0], NavRow::Header(l) if l == "A"));
         assert!(matches!(&rows[1], NavRow::Skill { index: 0, .. }));
         assert!(matches!(&rows[4], NavRow::Empty));
@@ -269,6 +369,24 @@ mod tests {
         assert!(
             matches!(last, NavRow::Skill { name, location, .. } if name == "z" && location == "C")
         );
+    }
+
+    #[test]
+    fn skill_index_at_line_accounts_for_two_line_cards() {
+        let scan = GlobalScan {
+            groups: vec![SkillGroup {
+                label: "A".to_string(),
+                skills: vec![SkillEntry::new("x"), SkillEntry::new("y")],
+            }],
+        };
+        let rows = nav_rows(&scan);
+        // Header @0; skill x @1,2; skill y @3,4.
+        assert_eq!(skill_index_at_line(&rows, 0), None);
+        assert_eq!(skill_index_at_line(&rows, 1), Some(0));
+        assert_eq!(skill_index_at_line(&rows, 2), Some(0));
+        assert_eq!(skill_index_at_line(&rows, 3), Some(1));
+        assert_eq!(skill_index_at_line(&rows, 4), Some(1));
+        assert_eq!(skill_index_at_line(&rows, 5), None);
     }
 
     #[test]

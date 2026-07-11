@@ -399,10 +399,7 @@ fn nav_row_hit(rows: &[skills::NavRow], nav: Rect, col: u16, row: u16) -> Option
         return None;
     }
     let visual = (row - inner_y) as usize;
-    match rows.get(visual) {
-        Some(skills::NavRow::Skill { index, .. }) => Some(*index),
-        _ => None,
-    }
+    skills::skill_index_at_line(rows, visual)
 }
 
 #[cfg(test)]
