@@ -2,13 +2,13 @@
 
 A TUI-first manager for AI agent skills.
 
-`skilloom` keeps your **personal skills** versioned in a dedicated git repo ([loom-skills](https://github.com/mikevalstar/loom-skills)) and tracks **third-party skills** from upstream git repos — then reconciles them, in both directions, across every agent and project that uses them. Think *chezmoi, but for the `SKILL.md` folders that Claude Code, Codex, Cursor and friends discover on disk.*
+`skilloom` keeps your **personal skills** versioned in a dedicated git repo ([loom-skills](https://github.com/mikevalstar/loom-skills)) and tracks **third-party skills** from upstream git repos — then syncs a curated selection out to every agent and project that needs them, and back. Think *chezmoi, but for the `SKILL.md` folders that Claude Code, Codex, Cursor and friends discover on disk.*
 
-- **Two source kinds** — personal skills you author (round-tripped through the loom-skills repo) and third-party skills pulled from public git URLs.
-- **Multi-agent** — one canonical `~/.agents/skills/<name>/`, symlinked into each agent's dir (`~/.claude/skills/`, `~/.cursor/skills/`, …).
-- **Multi-scope** — applied globally, or vendored as real committed files into an individual project repo.
-- **2-way reconcile** — a skill can change locally *and* upstream; skilloom classifies each as in-sync / locally-changed / upstream-changed / changed-on-both / source-gone, shows a diff, and lets you pick a side. No pinned base, no auto-merge.
-- **TUI-first, headless underneath** — an interactive terminal UI does the mutating; `skilloom … --json` gives scripts (and [myplace](https://github.com/mikevalstar/myplace)) a read-only status/inventory view.
+- **Repo as hub** — your loom-skills repo holds the real files: `vendor/` for third-party skills (copied in, with source metadata) and `personal/` for your own.
+- **Flows every way** — copy skills out of the repo into your global agent dirs (`~/.agents`, `~/.claude`) and into project repos, and capture skills back up into the repo.
+- **Global + per-project** — install a curated skill globally and/or into individual project repos; you choose where each one goes.
+- **Curated & selective** — syncing is opt-in per skill per destination: a project-specific skill needn't flow up, a repo skill needn't land in every project.
+- **TUI-first, headless underneath** — an interactive terminal UI does the mutating; `skilloom … --json` gives scripts (and [myplace](https://github.com/mikevalstar/myplace)) a read-only status view. *(Diff-while-syncing, tags, search, and filtering come later.)*
 
 > 🚧 **Scaffold.** Nothing is built yet. This repo currently holds the documentation-first design (see [docs/](docs/README.md)) and a minimal Rust skeleton. The engine, the TUI, and the `--json` surface come next, in the planning and implementation phases. skilloom was spun out of myplace ([its ADR-0024](https://github.com/mikevalstar/myplace/blob/main/docs/adrs/0024-skills-management-as-separate-project.md)); the design intent is re-homed in [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md).
 
@@ -32,14 +32,15 @@ Rust toolchain is pinned to stable via `rust-toolchain.toml`.
 
 ## Roadmap
 
-A draft plan, to be refined in the planning phase — see [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md) for the model behind it.
+A draft plan — see the [functional overview](docs/features/overview.md) for the model and [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md) for the scope.
 
 | Phase | Scope |
 |-------|-------|
-| 1 | **Core engine + `--json`.** Fetch personal skills from loom-skills and third-party skills from git URLs; canonical `~/.agents/skills/` store + per-agent symlinks; machine-local state; read-only `status`/inventory as `--json`. |
-| 2 | **Reconcile TUI.** The interactive ratatui surface: classify (in-sync / locally-changed / upstream-changed / changed-on-both / source-gone), diff, and pick-a-side. |
-| 3 | **Per-project vendoring.** Real committed `.agents/skills/` under a project repo, with project-scoped reconcile. |
-| 4 | **myplace integration.** skilloom installed and surfaced as a managed tool / currency source by myplace (a myplace-side follow-up). |
+| 1 | First-run config (point at loom-skills), the repo-as-hub layout, and the dashboard shell. |
+| 2 | Add & import: remote skills → `vendor/`, global skills (`~/.agents`/`~/.claude`) → `personal/`, track project folders. |
+| 3 | Sync engine + ledger: repo ↔ global, repo → projects, remote → repo — curated per skill × destination, with status. |
+| Later | Tagging, searching, filtering, and diff-while-syncing. |
+| — | myplace integration (surface skilloom as a managed tool — a myplace-side follow-up). |
 
 ## Stack
 

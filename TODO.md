@@ -2,17 +2,22 @@
 
 High-level next steps. Detail lands in `docs/` as we go (documentation-first — [ADR-0001](docs/adrs/0001-documentation-first.md)).
 
-## Planning phase (next)
+## Planning phase (in progress)
 
-Turn the model in [ADR-0003](docs/adrs/0003-skilloom-engine-design-and-scope.md) into concrete specs before writing engine code:
+Design docs (medium detail) — done:
 
-- [ ] **Feature spec: skill source config / manifest** — how personal (loom-skills) and third-party (git URL) sources are declared and resolved.
-- [ ] **Feature spec: canonical store + multi-agent symlinks** — `~/.agents/skills/<name>/` and which agent dirs get linked.
-- [ ] **Feature spec: machine-local state** — what skilloom records (name → source, scope, resolved commit, targets) and where.
-- [ ] **Feature spec: reconcile** — the classifier (in-sync / locally-changed / upstream-changed / changed-on-both / source-gone), the diff, and pick-a-side semantics.
-- [ ] **Feature spec: headless `--json` contract** — commands, output schema, exit codes; the read-only/mutation split.
-- [ ] **Workflow docs** — e.g. "add a third-party skill", "reconcile a locally-edited skill", "vendor a skill into a project".
-- [ ] **ADR: per-project vendoring model** — committed `.agents/skills/` under a project repo (may fold into a feature spec).
+- [x] **Functional overview** — repo-as-hub model, surfaces, sync directions: [docs/features/overview.md](docs/features/overview.md).
+- [x] **TUI design sketch** — screens, legend, keymap, navigation: [docs/features/tui-dashboard.md](docs/features/tui-dashboard.md).
+
+Specs still to write before engine code:
+
+- [ ] **Config format** (`~/.config/skilloom/config.toml`) — repo location, tracked projects, agent targets, and the which-goes-where curation.
+- [ ] **Repo layout spec** — `vendor/` + `personal/` and the per-skill `.skilloom.toml` (source, ref, synced-at).
+- [ ] **Sync engine + ledger** — the directions in the overview, how "which skill is synced where" is tracked, and how status (`●↑▲↕○✗`) is computed.
+- [ ] **Global mechanism decision** — canonical `~/.agents/skills` + symlinks vs. copy into each agent dir (an ADR).
+- [ ] **Headless `--json` contract** — commands, output schema, exit codes; the read-only/mutation split.
+- [ ] **Workflow docs** — "add a remote skill", "import a global skill", "install a skill into a project".
+- [ ] **Superseding ADR for ADR-0003** — record the mechanism change (repo-as-hub, copy-based, diff deferred) once the model locks.
 
 ## Implementation phase (after planning)
 
